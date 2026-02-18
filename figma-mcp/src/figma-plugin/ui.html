@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html>
+
 <head>
   <style>
     body {
@@ -8,21 +9,33 @@
       margin: 8px;
       color: #333;
     }
+
     .status {
       display: flex;
       align-items: center;
       gap: 6px;
       margin-bottom: 8px;
     }
+
     .dot {
       width: 8px;
       height: 8px;
       border-radius: 50%;
       background: #ccc;
     }
-    .dot.connected { background: #2ecc71; }
-    .dot.connecting { background: #f1c40f; }
-    .dot.disconnected { background: #e74c3c; }
+
+    .dot.connected {
+      background: #2ecc71;
+    }
+
+    .dot.connecting {
+      background: #f1c40f;
+    }
+
+    .dot.disconnected {
+      background: #e74c3c;
+    }
+
     #log {
       font-size: 10px;
       color: #888;
@@ -31,23 +44,18 @@
     }
   </style>
 </head>
+
 <body>
   <div class="status">
-    <div class="dot" id="statusDot"></div>
-    <span id="statusText">Disconnected</span>
+    <div class="dot disconnected" id="statusDot"></div>
+    <span id="statusText">Initializing...</span>
   </div>
-  <div id="log"></div>
+  <div id="log">
+    <div style="font-size: 10px; color: #999;">Ready to connect</div>
+  </div>
 
   <script>
-    const BRIDGE_URL = "ws://127.0.0.1:9001";
-    const RECONNECT_BASE_MS = 1000;
-    const RECONNECT_MAX_MS = 30000;
-    const RECONNECT_MULTIPLIER = 2;
-
-    let ws = null;
-    let reconnectDelay = RECONNECT_BASE_MS;
-    let reconnectTimer = null;
-
+    // Immediately notify that UI is loaded
     const statusDot = document.getElementById("statusDot");
     const statusText = document.getElementById("statusText");
     const logEl = document.getElementById("log");
@@ -57,7 +65,6 @@
       line.textContent = new Date().toLocaleTimeString() + " " + msg;
       logEl.appendChild(line);
       logEl.scrollTop = logEl.scrollHeight;
-      // Keep only last 50 lines
       while (logEl.children.length > 50) {
         logEl.removeChild(logEl.firstChild);
       }
@@ -67,6 +74,19 @@
       statusDot.className = "dot " + status;
       statusText.textContent = status.charAt(0).toUpperCase() + status.slice(1);
     }
+
+    // Set initial status
+    setStatus("disconnected");
+    log("UI loaded, connecting to bridge...");
+
+    const BRIDGE_URL = "ws://localhost:9001";
+    const RECONNECT_BASE_MS = 1000;
+    const RECONNECT_MAX_MS = 30000;
+    const RECONNECT_MULTIPLIER = 2;
+
+    let ws = null;
+    let reconnectDelay = RECONNECT_BASE_MS;
+    let reconnectTimer = null;
 
     function connect() {
       setStatus("connecting");
@@ -81,7 +101,7 @@
         return;
       }
 
-      ws.onopen = function() {
+      ws.onopen = function () {
         log("Connected to bridge");
         setStatus("connected");
         reconnectDelay = RECONNECT_BASE_MS;
@@ -97,7 +117,6 @@
         log("Sent REGISTER");
       };
 
-      // Defense-in-depth: validate messages before forwarding to sandbox
       var ALLOWED_COMMANDS = [
         "get_document_info", "get_selection", "get_node",
         "create_frame", "set_auto_layout",
@@ -108,22 +127,19 @@
       ];
       var REQ_ID_RE = /^req_\d+_[a-z0-9]+$/;
 
-      ws.onmessage = function(event) {
+      ws.onmessage = function (event) {
         try {
           var msg = JSON.parse(event.data);
           if (msg.type === "COMMAND") {
-            // Validate requestId format
             if (!REQ_ID_RE.test(msg.requestId)) {
               log("Rejected: invalid requestId");
               return;
             }
-            // Validate command is in allowlist
             if (ALLOWED_COMMANDS.indexOf(msg.command) === -1) {
               log("Rejected: unknown command " + msg.command);
               return;
             }
             log("CMD: " + msg.command + " [" + msg.requestId + "]");
-            // Forward to plugin sandbox (Figma mediates via pluginMessage wrapper)
             parent.postMessage({ pluginMessage: msg }, "*");
           }
         } catch (e) {
@@ -131,16 +147,15 @@
         }
       };
 
-      ws.onclose = function(event) {
+      ws.onclose = function (event) {
         log("Disconnected: " + event.code + " " + (event.reason || ""));
         setStatus("disconnected");
         ws = null;
         scheduleReconnect();
       };
 
-      ws.onerror = function(error) {
+      ws.onerror = function (error) {
         log("WebSocket error");
-        // onclose will follow
       };
     }
 
@@ -151,15 +166,14 @@
       var delay = Math.min(reconnectDelay + jitter, RECONNECT_MAX_MS);
 
       log("Reconnecting in " + Math.round(delay) + "ms");
-      reconnectTimer = setTimeout(function() {
+      reconnectTimer = setTimeout(function () {
         reconnectTimer = null;
         reconnectDelay = Math.min(reconnectDelay * RECONNECT_MULTIPLIER, RECONNECT_MAX_MS);
         connect();
       }, delay);
     }
 
-    // Receive RESPONSE from plugin sandbox, forward to bridge
-    window.onmessage = function(event) {
+    window.onmessage = function (event) {
       var msg = event.data && event.data.pluginMessage;
       if (msg && msg.type === "RESPONSE" && ws && ws.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify(msg));
@@ -167,8 +181,11 @@
       }
     };
 
-    // Start connection
-    connect();
+    // Start connection asynchronously with very short delay
+    setTimeout(function () {
+      connect();
+    }, 50);
   </script>
 </body>
+
 </html>

@@ -7,7 +7,7 @@
   "editorType": ["figma"],
   "networkAccess": {
     "allowedDomains": ["none"],
-    "devAllowedDomains": ["localhost"],
+    "devAllowedDomains": ["http://localhost:9001", "ws://localhost:9001"],
     "reasoning": "Connects to local WebSocket bridge for MCP communication"
   }
 }

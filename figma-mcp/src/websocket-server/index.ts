@@ -13,7 +13,7 @@ export interface BridgeConfig {
 
 export function loadConfig(): BridgeConfig {
   return {
-    host: "127.0.0.1",
+    host: "localhost",
     port: parseInt(process.env.WS_PORT ?? "9001", 10),
     timeoutMs: parseInt(process.env.WS_TIMEOUT_MS ?? "30000", 10),
     maxMessageBytes: 65_536,
@@ -96,7 +96,10 @@ export function parseAndValidate(raw: string): WireMessage {
     throw new ProtocolError(`Unknown message type: ${String(obj.type)}`);
   }
 
-  if (typeof obj.requestId !== "string" || !REQUEST_ID_PATTERN.test(obj.requestId)) {
+  if (
+    typeof obj.requestId !== "string" ||
+    !REQUEST_ID_PATTERN.test(obj.requestId)
+  ) {
     throw new ProtocolError(`Invalid requestId: ${String(obj.requestId)}`);
   }
 
@@ -105,7 +108,10 @@ export function parseAndValidate(raw: string): WireMessage {
       if (typeof obj.pluginId !== "string" || obj.pluginId.length === 0) {
         throw new ProtocolError("REGISTER requires non-empty pluginId");
       }
-      if (typeof obj.pluginVersion !== "string" || obj.pluginVersion.length === 0) {
+      if (
+        typeof obj.pluginVersion !== "string" ||
+        obj.pluginVersion.length === 0
+      ) {
         throw new ProtocolError("REGISTER requires non-empty pluginVersion");
       }
       break;
@@ -113,7 +119,11 @@ export function parseAndValidate(raw: string): WireMessage {
       if (typeof obj.command !== "string" || obj.command.length === 0) {
         throw new ProtocolError("COMMAND requires non-empty command string");
       }
-      if (typeof obj.args !== "object" || obj.args === null || Array.isArray(obj.args)) {
+      if (
+        typeof obj.args !== "object" ||
+        obj.args === null ||
+        Array.isArray(obj.args)
+      ) {
         throw new ProtocolError("COMMAND requires args object");
       }
       break;
@@ -124,7 +134,10 @@ export function parseAndValidate(raw: string): WireMessage {
       if (obj.success && (typeof obj.data !== "object" || obj.data === null)) {
         throw new ProtocolError("Success RESPONSE requires data object");
       }
-      if (!obj.success && (typeof obj.error !== "object" || obj.error === null)) {
+      if (
+        !obj.success &&
+        (typeof obj.error !== "object" || obj.error === null)
+      ) {
         throw new ProtocolError("Error RESPONSE requires error object");
       }
       break;
@@ -162,7 +175,9 @@ export class FigmaBridge {
         });
 
         this.wss.on("listening", () => {
-          console.log(`[bridge] Listening on ${this.config.host}:${this.config.port}`);
+          console.log(
+            `[bridge] Listening on ${this.config.host}:${this.config.port}`,
+          );
           resolve();
         });
 
@@ -198,7 +213,10 @@ export class FigmaBridge {
   }
 
   private handleConnection(ws: WebSocket, req: IncomingMessage): void {
-    const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
+    const url = new URL(
+      req.url ?? "/",
+      `http://${req.headers.host ?? "localhost"}`,
+    );
     const role = url.searchParams.get("role");
 
     if (role === "mcp-client") {
@@ -222,7 +240,9 @@ export class FigmaBridge {
     });
 
     ws.on("close", (code: number, reason: Buffer) => {
-      console.log(`[bridge] MCP client disconnected: ${code} ${reason.toString()}`);
+      console.log(
+        `[bridge] MCP client disconnected: ${code} ${reason.toString()}`,
+      );
       if (this.mcpClient === ws) {
         this.mcpClient = null;
       }
@@ -249,14 +269,19 @@ export class FigmaBridge {
           }
 
           // Register this as the plugin client
-          if (this.pluginClient && this.pluginClient.readyState === WebSocket.OPEN) {
+          if (
+            this.pluginClient &&
+            this.pluginClient.readyState === WebSocket.OPEN
+          ) {
             this.pluginClient.close(4002, "Replaced by new connection");
           }
 
           this.pluginClient = ws;
           this.isPluginRegistered = true;
           const reg = msg as RegisterMessage;
-          console.log(`[bridge] Plugin registered: ${reg.pluginId} v${reg.pluginVersion}`);
+          console.log(
+            `[bridge] Plugin registered: ${reg.pluginId} v${reg.pluginVersion}`,
+          );
 
           // Set up plugin message handler for subsequent messages
           return;
@@ -274,7 +299,9 @@ export class FigmaBridge {
 
     ws.on("close", (code: number, reason: Buffer) => {
       if (this.pluginClient === ws) {
-        console.log(`[bridge] Plugin disconnected: ${code} ${reason.toString()}`);
+        console.log(
+          `[bridge] Plugin disconnected: ${code} ${reason.toString()}`,
+        );
         this.onPluginDisconnect();
       }
     });
@@ -289,7 +316,10 @@ export class FigmaBridge {
     try {
       msg = parseAndValidate(raw);
     } catch (err) {
-      console.error("[bridge] Invalid message from MCP client:", (err as Error).message);
+      console.error(
+        "[bridge] Invalid message from MCP client:",
+        (err as Error).message,
+      );
       return;
     }
 
@@ -323,7 +353,10 @@ export class FigmaBridge {
     try {
       msg = parseAndValidate(raw);
     } catch (err) {
-      console.error("[bridge] Invalid message from plugin:", (err as Error).message);
+      console.error(
+        "[bridge] Invalid message from plugin:",
+        (err as Error).message,
+      );
       return;
     }
 
@@ -377,15 +410,25 @@ export class FigmaBridge {
 
 // ─── Main Entry Point ────────────────────────────────────────────────────────
 
-const isMainModule = process.argv[1]?.endsWith("websocket-server/index.ts") ||
-  process.argv[1]?.endsWith("websocket-server/index.js");
+//TODO to be cheked
+const isMainModule =
+  process.argv[1]?.endsWith("websocket-server/index.ts") ||
+  process.argv[1]?.endsWith("websocket-server/index.js") ||
+  process.argv[1]?.includes("websocket-server");
 
 if (isMainModule) {
   const bridge = new FigmaBridge();
-  bridge.start().catch((err) => {
-    console.error("[bridge] Failed to start:", err);
-    process.exit(1);
-  });
+
+  bridge
+    .start()
+    .catch((err) => {
+      console.error("[bridge] Failed to start:", err);
+      process.exit(1);
+    })
+    .then(() => {
+      // Keep the process alive
+      console.log("[bridge] Server running. Press Ctrl+C to stop.");
+    });
 
   process.on("SIGINT", async () => {
     console.log("\n[bridge] Shutting down...");
@@ -394,6 +437,7 @@ if (isMainModule) {
   });
 
   process.on("SIGTERM", async () => {
+    console.log("[bridge] Shutting down...");
     await bridge.stop();
     process.exit(0);
   });

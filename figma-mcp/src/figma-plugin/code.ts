@@ -19,7 +19,9 @@ interface ResponseMessage {
   error?: { code: string; message: string };
 }
 
-type CommandHandler = (args: Record<string, unknown>) => Promise<Record<string, unknown>>;
+type CommandHandler = (
+  args: Record<string, unknown>
+) => Promise<Record<string, unknown>>;
 
 // ─── Command Allowlist ───────────────────────────────────────────────────────
 
@@ -41,7 +43,7 @@ const ALLOWED_COMMANDS = [
   "zoom_to_node",
 ] as const;
 
-type AllowedCommand = typeof ALLOWED_COMMANDS[number];
+type AllowedCommand = (typeof ALLOWED_COMMANDS)[number];
 
 function isAllowedCommand(cmd: string): cmd is AllowedCommand {
   return (ALLOWED_COMMANDS as readonly string[]).includes(cmd);
@@ -67,7 +69,12 @@ function assertString(val: unknown, name: string): string {
   return val;
 }
 
-function assertNumber(val: unknown, name: string, min?: number, max?: number): number {
+function assertNumber(
+  val: unknown,
+  name: string,
+  min?: number,
+  max?: number
+): number {
   if (typeof val !== "number" || isNaN(val)) {
     throw new Error(`${name} must be a number`);
   }
@@ -85,12 +92,20 @@ function assertOptionalString(val: unknown, name: string): string | undefined {
   return assertString(val, name);
 }
 
-function assertOptionalNumber(val: unknown, name: string, min?: number, max?: number): number | undefined {
+function assertOptionalNumber(
+  val: unknown,
+  name: string,
+  min?: number,
+  max?: number
+): number | undefined {
   if (val === undefined || val === null) return undefined;
   return assertNumber(val, name, min, max);
 }
 
-function assertOptionalBoolean(val: unknown, name: string): boolean | undefined {
+function assertOptionalBoolean(
+  val: unknown,
+  name: string
+): boolean | undefined {
   if (val === undefined || val === null) return undefined;
   if (typeof val !== "boolean") {
     throw new Error(`${name} must be a boolean`);
@@ -147,14 +162,17 @@ function assertFills(val: unknown, name: string): FillInput[] {
   });
 }
 
-function assertOptionalFills(val: unknown, name: string): FillInput[] | undefined {
+function assertOptionalFills(
+  val: unknown,
+  name: string
+): FillInput[] | undefined {
   if (val === undefined || val === null) return undefined;
   return assertFills(val, name);
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-function resolveParent(parentId?: string): (FrameNode | GroupNode | PageNode) {
+function resolveParent(parentId?: string): FrameNode | GroupNode | PageNode {
   if (!parentId) return figma.currentPage;
   const node = figma.getNodeById(parentId);
   if (!node) {
@@ -184,7 +202,10 @@ function fillsToFigma(fills: FillInput[]): Paint[] {
       };
     }
     // Gradient support
-    if ((f.type === "GRADIENT_LINEAR" || f.type === "GRADIENT_RADIAL") && f.gradientStops) {
+    if (
+      (f.type === "GRADIENT_LINEAR" || f.type === "GRADIENT_RADIAL") &&
+      f.gradientStops
+    ) {
       return {
         type: f.type as "GRADIENT_LINEAR" | "GRADIENT_RADIAL",
         gradientStops: f.gradientStops.map((s) => ({
@@ -197,7 +218,11 @@ function fillsToFigma(fills: FillInput[]): Paint[] {
         ] as Transform,
       };
     }
-    return { type: "SOLID" as const, color: { r: 0.5, g: 0.5, b: 0.5 }, opacity: 1 };
+    return {
+      type: "SOLID" as const,
+      color: { r: 0.5, g: 0.5, b: 0.5 },
+      opacity: 1,
+    };
   });
 }
 
@@ -241,7 +266,9 @@ function serializeNode(node: SceneNode): Record<string, unknown> {
 
 // ─── Command Handlers ────────────────────────────────────────────────────────
 
-async function handleGetDocumentInfo(_args: Record<string, unknown>): Promise<Record<string, unknown>> {
+async function handleGetDocumentInfo(
+  _args: Record<string, unknown>
+): Promise<Record<string, unknown>> {
   const doc = figma.root;
   const pages = doc.children.map((page) => ({
     id: page.id,
@@ -266,7 +293,9 @@ async function handleGetDocumentInfo(_args: Record<string, unknown>): Promise<Re
   };
 }
 
-async function handleGetSelection(_args: Record<string, unknown>): Promise<Record<string, unknown>> {
+async function handleGetSelection(
+  _args: Record<string, unknown>
+): Promise<Record<string, unknown>> {
   const selection = figma.currentPage.selection;
   return {
     selectionCount: selection.length,
@@ -274,7 +303,9 @@ async function handleGetSelection(_args: Record<string, unknown>): Promise<Recor
   };
 }
 
-async function handleGetNode(args: Record<string, unknown>): Promise<Record<string, unknown>> {
+async function handleGetNode(
+  args: Record<string, unknown>
+): Promise<Record<string, unknown>> {
   const nodeId = assertString(args.nodeId, "nodeId");
   const node = findNode(nodeId);
   const result = serializeNode(node);
@@ -290,7 +321,9 @@ async function handleGetNode(args: Record<string, unknown>): Promise<Record<stri
   return result;
 }
 
-async function handleCreateFrame(args: Record<string, unknown>): Promise<Record<string, unknown>> {
+async function handleCreateFrame(
+  args: Record<string, unknown>
+): Promise<Record<string, unknown>> {
   const name = assertString(args.name, "name");
   const width = assertNumber(args.width, "width", 1, 100000);
   const height = assertNumber(args.height, "height", 1, 100000);
@@ -306,11 +339,13 @@ async function handleCreateFrame(args: Record<string, unknown>): Promise<Record<
   frame.y = y;
 
   if (fillColor) {
-    frame.fills = [{
-      type: "SOLID",
-      color: { r: fillColor.r, g: fillColor.g, b: fillColor.b },
-      opacity: fillColor.a,
-    }];
+    frame.fills = [
+      {
+        type: "SOLID",
+        color: { r: fillColor.r, g: fillColor.g, b: fillColor.b },
+        opacity: fillColor.a,
+      },
+    ];
   }
 
   const parent = resolveParent(parentId);
@@ -321,13 +356,21 @@ async function handleCreateFrame(args: Record<string, unknown>): Promise<Record<
   return { nodeId: frame.id, name: frame.name, type: "FRAME" };
 }
 
-async function handleSetAutoLayout(args: Record<string, unknown>): Promise<Record<string, unknown>> {
+async function handleSetAutoLayout(
+  args: Record<string, unknown>
+): Promise<Record<string, unknown>> {
   const nodeId = assertString(args.nodeId, "nodeId");
   const direction = assertString(args.direction, "direction");
   const gap = assertNumber(args.gap ?? 0, "gap", 0, 10000);
   const padding = args.padding as Record<string, unknown> | undefined;
-  const primaryAxisAlign = assertString(args.primaryAxisAlign ?? "MIN", "primaryAxisAlign");
-  const counterAxisAlign = assertString(args.counterAxisAlign ?? "MIN", "counterAxisAlign");
+  const primaryAxisAlign = assertString(
+    args.primaryAxisAlign ?? "MIN",
+    "primaryAxisAlign"
+  );
+  const counterAxisAlign = assertString(
+    args.counterAxisAlign ?? "MIN",
+    "counterAxisAlign"
+  );
 
   if (direction !== "HORIZONTAL" && direction !== "VERTICAL") {
     throw new Error("direction must be HORIZONTAL or VERTICAL");
@@ -344,24 +387,50 @@ async function handleSetAutoLayout(args: Record<string, unknown>): Promise<Recor
 
   if (padding) {
     frame.paddingTop = assertNumber(padding.top ?? 0, "padding.top", 0, 10000);
-    frame.paddingRight = assertNumber(padding.right ?? 0, "padding.right", 0, 10000);
-    frame.paddingBottom = assertNumber(padding.bottom ?? 0, "padding.bottom", 0, 10000);
-    frame.paddingLeft = assertNumber(padding.left ?? 0, "padding.left", 0, 10000);
+    frame.paddingRight = assertNumber(
+      padding.right ?? 0,
+      "padding.right",
+      0,
+      10000
+    );
+    frame.paddingBottom = assertNumber(
+      padding.bottom ?? 0,
+      "padding.bottom",
+      0,
+      10000
+    );
+    frame.paddingLeft = assertNumber(
+      padding.left ?? 0,
+      "padding.left",
+      0,
+      10000
+    );
   }
 
-  frame.primaryAxisAlignItems = primaryAxisAlign as "MIN" | "CENTER" | "MAX" | "SPACE_BETWEEN";
+  frame.primaryAxisAlignItems = primaryAxisAlign as
+    | "MIN"
+    | "CENTER"
+    | "MAX"
+    | "SPACE_BETWEEN";
   frame.counterAxisAlignItems = counterAxisAlign as "MIN" | "CENTER" | "MAX";
 
   return { nodeId: frame.id, layoutMode: frame.layoutMode };
 }
 
-async function handleCreateRectangle(args: Record<string, unknown>): Promise<Record<string, unknown>> {
+async function handleCreateRectangle(
+  args: Record<string, unknown>
+): Promise<Record<string, unknown>> {
   const name = assertString(args.name ?? "Rectangle", "name");
   const width = assertNumber(args.width, "width", 1, 100000);
   const height = assertNumber(args.height, "height", 1, 100000);
   const x = assertNumber(args.x ?? 0, "x", -100000, 100000);
   const y = assertNumber(args.y ?? 0, "y", -100000, 100000);
-  const cornerRadius = assertNumber(args.cornerRadius ?? 0, "cornerRadius", 0, 10000);
+  const cornerRadius = assertNumber(
+    args.cornerRadius ?? 0,
+    "cornerRadius",
+    0,
+    10000
+  );
   const opacity = assertNumber(args.opacity ?? 1, "opacity", 0, 1);
   const parentId = assertOptionalString(args.parentId, "parentId");
   const fills = args.fills ? assertFills(args.fills, "fills") : undefined;
@@ -381,13 +450,20 @@ async function handleCreateRectangle(args: Record<string, unknown>): Promise<Rec
 
   if (stroke) {
     const strokeColor = assertRGBA(stroke.color, "stroke.color");
-    const strokeWeight = assertNumber(stroke.weight ?? 1, "stroke.weight", 0, 100);
+    const strokeWeight = assertNumber(
+      stroke.weight ?? 1,
+      "stroke.weight",
+      0,
+      100
+    );
     const strokeAlign = assertString(stroke.align ?? "INSIDE", "stroke.align");
-    rect.strokes = [{
-      type: "SOLID",
-      color: { r: strokeColor.r, g: strokeColor.g, b: strokeColor.b },
-      opacity: strokeColor.a,
-    }];
+    rect.strokes = [
+      {
+        type: "SOLID",
+        color: { r: strokeColor.r, g: strokeColor.g, b: strokeColor.b },
+        opacity: strokeColor.a,
+      },
+    ];
     rect.strokeWeight = strokeWeight;
     rect.strokeAlign = strokeAlign as "INSIDE" | "OUTSIDE" | "CENTER";
   }
@@ -400,7 +476,9 @@ async function handleCreateRectangle(args: Record<string, unknown>): Promise<Rec
   return { nodeId: rect.id, name: rect.name, type: "RECTANGLE" };
 }
 
-async function handleCreateEllipse(args: Record<string, unknown>): Promise<Record<string, unknown>> {
+async function handleCreateEllipse(
+  args: Record<string, unknown>
+): Promise<Record<string, unknown>> {
   const name = assertString(args.name ?? "Ellipse", "name");
   const width = assertNumber(args.width, "width", 1, 100000);
   const height = assertNumber(args.height, "height", 1, 100000);
@@ -427,7 +505,9 @@ async function handleCreateEllipse(args: Record<string, unknown>): Promise<Recor
   return { nodeId: ellipse.id, name: ellipse.name, type: "ELLIPSE" };
 }
 
-async function handleCreateText(args: Record<string, unknown>): Promise<Record<string, unknown>> {
+async function handleCreateText(
+  args: Record<string, unknown>
+): Promise<Record<string, unknown>> {
   const name = assertString(args.name ?? "Text", "name");
   const content = assertString(args.content, "content");
   const x = assertNumber(args.x ?? 0, "x", -100000, 100000);
@@ -437,11 +517,30 @@ async function handleCreateText(args: Record<string, unknown>): Promise<Record<s
   const fills = args.fills ? assertFills(args.fills, "fills") : undefined;
 
   const typo = (args.typography ?? {}) as Record<string, unknown>;
-  const fontFamily = assertString(typo.fontFamily ?? "Inter", "typography.fontFamily");
-  const fontStyle = assertString(typo.fontStyle ?? "Regular", "typography.fontStyle");
-  const fontSize = assertNumber(typo.fontSize ?? 16, "typography.fontSize", 1, 1000);
-  const textAlign = assertString(typo.textAlign ?? "LEFT", "typography.textAlign");
-  const letterSpacing = assertNumber(typo.letterSpacing ?? 0, "typography.letterSpacing", -100, 1000);
+  const fontFamily = assertString(
+    typo.fontFamily ?? "Inter",
+    "typography.fontFamily"
+  );
+  const fontStyle = assertString(
+    typo.fontStyle ?? "Regular",
+    "typography.fontStyle"
+  );
+  const fontSize = assertNumber(
+    typo.fontSize ?? 16,
+    "typography.fontSize",
+    1,
+    1000
+  );
+  const textAlign = assertString(
+    typo.textAlign ?? "LEFT",
+    "typography.textAlign"
+  );
+  const letterSpacing = assertNumber(
+    typo.letterSpacing ?? 0,
+    "typography.letterSpacing",
+    -100,
+    1000
+  );
   const lineHeight = typo.lineHeight as Record<string, unknown> | undefined;
 
   await figma.loadFontAsync({ family: fontFamily, style: fontStyle });
@@ -459,7 +558,11 @@ async function handleCreateText(args: Record<string, unknown>): Promise<Record<s
     textNode.resize(width, textNode.height);
   }
 
-  textNode.textAlignHorizontal = textAlign as "LEFT" | "CENTER" | "RIGHT" | "JUSTIFIED";
+  textNode.textAlignHorizontal = textAlign as
+    | "LEFT"
+    | "CENTER"
+    | "RIGHT"
+    | "JUSTIFIED";
   textNode.letterSpacing = { value: letterSpacing, unit: "PIXELS" };
 
   if (lineHeight) {
@@ -467,9 +570,15 @@ async function handleCreateText(args: Record<string, unknown>): Promise<Record<s
     if (unit === "AUTO") {
       textNode.lineHeight = { unit: "AUTO" };
     } else if (unit === "PIXELS") {
-      textNode.lineHeight = { value: assertNumber(lineHeight.value, "lineHeight.value", 0), unit: "PIXELS" };
+      textNode.lineHeight = {
+        value: assertNumber(lineHeight.value, "lineHeight.value", 0),
+        unit: "PIXELS",
+      };
     } else if (unit === "PERCENT") {
-      textNode.lineHeight = { value: assertNumber(lineHeight.value, "lineHeight.value", 0), unit: "PERCENT" };
+      textNode.lineHeight = {
+        value: assertNumber(lineHeight.value, "lineHeight.value", 0),
+        unit: "PERCENT",
+      };
     }
   }
 
@@ -482,10 +591,17 @@ async function handleCreateText(args: Record<string, unknown>): Promise<Record<s
     parent.appendChild(textNode);
   }
 
-  return { nodeId: textNode.id, name: textNode.name, type: "TEXT", characters: textNode.characters };
+  return {
+    nodeId: textNode.id,
+    name: textNode.name,
+    type: "TEXT",
+    characters: textNode.characters,
+  };
 }
 
-async function handleUpdateText(args: Record<string, unknown>): Promise<Record<string, unknown>> {
+async function handleUpdateText(
+  args: Record<string, unknown>
+): Promise<Record<string, unknown>> {
   const nodeId = assertString(args.nodeId, "nodeId");
   const content = assertOptionalString(args.content, "content");
   const fills = assertOptionalFills(args.fills, "fills");
@@ -507,7 +623,10 @@ async function handleUpdateText(args: Record<string, unknown>): Promise<Record<s
   const typo = args.typography as Record<string, unknown> | undefined;
   if (typo) {
     if (typo.fontFamily || typo.fontStyle) {
-      const family = assertString(typo.fontFamily ?? fontName.family, "fontFamily");
+      const family = assertString(
+        typo.fontFamily ?? fontName.family,
+        "fontFamily"
+      );
       const style = assertString(typo.fontStyle ?? fontName.style, "fontStyle");
       await figma.loadFontAsync({ family, style });
       textNode.fontName = { family, style };
@@ -516,10 +635,16 @@ async function handleUpdateText(args: Record<string, unknown>): Promise<Record<s
       textNode.fontSize = assertNumber(typo.fontSize, "fontSize", 1, 1000);
     }
     if (typo.textAlign !== undefined) {
-      textNode.textAlignHorizontal = assertString(typo.textAlign, "textAlign") as "LEFT" | "CENTER" | "RIGHT" | "JUSTIFIED";
+      textNode.textAlignHorizontal = assertString(
+        typo.textAlign,
+        "textAlign"
+      ) as "LEFT" | "CENTER" | "RIGHT" | "JUSTIFIED";
     }
     if (typo.letterSpacing !== undefined) {
-      textNode.letterSpacing = { value: assertNumber(typo.letterSpacing, "letterSpacing"), unit: "PIXELS" };
+      textNode.letterSpacing = {
+        value: assertNumber(typo.letterSpacing, "letterSpacing"),
+        unit: "PIXELS",
+      };
     }
     if (typo.lineHeight !== undefined) {
       const lh = typo.lineHeight as Record<string, unknown>;
@@ -527,9 +652,15 @@ async function handleUpdateText(args: Record<string, unknown>): Promise<Record<s
       if (unit === "AUTO") {
         textNode.lineHeight = { unit: "AUTO" };
       } else if (unit === "PIXELS") {
-        textNode.lineHeight = { value: assertNumber(lh.value, "lineHeight.value", 0), unit: "PIXELS" };
+        textNode.lineHeight = {
+          value: assertNumber(lh.value, "lineHeight.value", 0),
+          unit: "PIXELS",
+        };
       } else if (unit === "PERCENT") {
-        textNode.lineHeight = { value: assertNumber(lh.value, "lineHeight.value", 0), unit: "PERCENT" };
+        textNode.lineHeight = {
+          value: assertNumber(lh.value, "lineHeight.value", 0),
+          unit: "PERCENT",
+        };
       }
     }
   }
@@ -541,7 +672,9 @@ async function handleUpdateText(args: Record<string, unknown>): Promise<Record<s
   return { nodeId: textNode.id, characters: textNode.characters };
 }
 
-async function handleUpdateNode(args: Record<string, unknown>): Promise<Record<string, unknown>> {
+async function handleUpdateNode(
+  args: Record<string, unknown>
+): Promise<Record<string, unknown>> {
   const nodeId = assertString(args.nodeId, "nodeId");
   const node = findNode(nodeId);
   const updatedFields: string[] = [];
@@ -553,11 +686,22 @@ async function handleUpdateNode(args: Record<string, unknown>): Promise<Record<s
   const opacity = assertOptionalNumber(args.opacity, "opacity", 0, 1);
   const visible = assertOptionalBoolean(args.visible, "visible");
   const name = assertOptionalString(args.name, "name");
-  const cornerRadius = assertOptionalNumber(args.cornerRadius, "cornerRadius", 0, 10000);
+  const cornerRadius = assertOptionalNumber(
+    args.cornerRadius,
+    "cornerRadius",
+    0,
+    10000
+  );
   const fills = assertOptionalFills(args.fills, "fills");
 
-  if (x !== undefined) { node.x = x; updatedFields.push("x"); }
-  if (y !== undefined) { node.y = y; updatedFields.push("y"); }
+  if (x !== undefined) {
+    node.x = x;
+    updatedFields.push("x");
+  }
+  if (y !== undefined) {
+    node.y = y;
+    updatedFields.push("y");
+  }
   if (width !== undefined || height !== undefined) {
     const w = width ?? node.width;
     const h = height ?? node.height;
@@ -591,9 +735,14 @@ async function handleUpdateNode(args: Record<string, unknown>): Promise<Record<s
   return { nodeId: node.id, updatedFields };
 }
 
-async function handleAddShadow(args: Record<string, unknown>): Promise<Record<string, unknown>> {
+async function handleAddShadow(
+  args: Record<string, unknown>
+): Promise<Record<string, unknown>> {
   const nodeId = assertString(args.nodeId, "nodeId");
-  const color = assertRGBA(args.color ?? { r: 0, g: 0, b: 0, a: 0.25 }, "color");
+  const color = assertRGBA(
+    args.color ?? { r: 0, g: 0, b: 0, a: 0.25 },
+    "color"
+  );
   const offsetX = assertNumber(args.offsetX ?? 0, "offsetX", -1000, 1000);
   const offsetY = assertNumber(args.offsetY ?? 4, "offsetY", -1000, 1000);
   const blur = assertNumber(args.blur ?? 8, "blur", 0, 1000);
@@ -620,7 +769,9 @@ async function handleAddShadow(args: Record<string, unknown>): Promise<Record<st
   return { nodeId: node.id, effectCount: blendableNode.effects.length };
 }
 
-async function handleGroupNodes(args: Record<string, unknown>): Promise<Record<string, unknown>> {
+async function handleGroupNodes(
+  args: Record<string, unknown>
+): Promise<Record<string, unknown>> {
   if (!Array.isArray(args.nodeIds)) {
     throw new Error("nodeIds must be an array");
   }
@@ -637,22 +788,35 @@ async function handleGroupNodes(args: Record<string, unknown>): Promise<Record<s
   const group = figma.group(nodes, figma.currentPage);
   group.name = name;
 
-  return { groupNodeId: group.id, name: group.name, childCount: group.children.length };
+  return {
+    groupNodeId: group.id,
+    name: group.name,
+    childCount: group.children.length,
+  };
 }
 
-async function handleDeleteNode(args: Record<string, unknown>): Promise<Record<string, unknown>> {
+async function handleDeleteNode(
+  args: Record<string, unknown>
+): Promise<Record<string, unknown>> {
   const nodeId = assertString(args.nodeId, "nodeId");
   const node = findNode(nodeId);
   node.remove();
   return { deleted: true, nodeId };
 }
 
-async function handleCreateComponent(args: Record<string, unknown>): Promise<Record<string, unknown>> {
+async function handleCreateComponent(
+  args: Record<string, unknown>
+): Promise<Record<string, unknown>> {
   const nodeId = assertString(args.nodeId, "nodeId");
   const node = findNode(nodeId);
 
-  if (node.type !== "FRAME" && node.type !== "GROUP" && node.type !== "RECTANGLE" &&
-      node.type !== "ELLIPSE" && node.type !== "TEXT") {
+  if (
+    node.type !== "FRAME" &&
+    node.type !== "GROUP" &&
+    node.type !== "RECTANGLE" &&
+    node.type !== "ELLIPSE" &&
+    node.type !== "TEXT"
+  ) {
     throw new Error(`Cannot convert ${node.type} to component`);
   }
 
@@ -681,7 +845,9 @@ async function handleCreateComponent(args: Record<string, unknown>): Promise<Rec
   return { componentId: component.id, name: component.name, type: "COMPONENT" };
 }
 
-async function handleZoomToNode(args: Record<string, unknown>): Promise<Record<string, unknown>> {
+async function handleZoomToNode(
+  args: Record<string, unknown>
+): Promise<Record<string, unknown>> {
   const nodeId = assertString(args.nodeId, "nodeId");
   const node = findNode(nodeId);
   figma.viewport.scrollAndZoomIntoView([node]);
@@ -722,7 +888,7 @@ function sendResponse(
   requestId: string,
   success: boolean,
   data?: Record<string, unknown>,
-  error?: { code: string; message: string },
+  error?: { code: string; message: string }
 ): void {
   const response: ResponseMessage = success
     ? { type: "RESPONSE", requestId, success: true, data }
@@ -731,7 +897,9 @@ function sendResponse(
   figma.ui.postMessage(response);
 }
 
-figma.showUI(__html__, { visible: false, width: 300, height: 200 });
+figma.showUI(__html__, { visible: true, width: 300, height: 200 });
+
+console.log("[plugin] Figma MCP Bridge plugin loaded and ready");
 
 figma.ui.onmessage = async (msg: unknown) => {
   if (typeof msg !== "object" || msg === null) return;
@@ -762,9 +930,10 @@ figma.ui.onmessage = async (msg: unknown) => {
     return;
   }
 
-  const args = (typeof message.args === "object" && message.args !== null)
-    ? message.args as Record<string, unknown>
-    : {};
+  const args =
+    typeof message.args === "object" && message.args !== null
+      ? (message.args as Record<string, unknown>)
+      : {};
 
   const handler = handlers[command];
 
@@ -773,8 +942,10 @@ figma.ui.onmessage = async (msg: unknown) => {
     sendResponse(requestId, true, data);
   } catch (err) {
     const errMessage = err instanceof Error ? err.message : String(err);
-    const code = errMessage.includes("not found") ? "NODE_NOT_FOUND"
-      : errMessage.includes("font") ? "FONT_UNAVAILABLE"
+    const code = errMessage.includes("not found")
+      ? "NODE_NOT_FOUND"
+      : errMessage.includes("font")
+      ? "FONT_UNAVAILABLE"
       : "EXECUTION_ERROR";
     sendResponse(requestId, false, undefined, { code, message: errMessage });
   }
