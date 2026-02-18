@@ -1,0 +1,23 @@
+{
+  "permissions": {
+    "allow": [
+      "WebSearch",
+      "Bash(npm install)",
+      "Bash(npm test:*)",
+      "WebFetch(domain:developers.figma.com)",
+      "WebFetch(domain:forum.figma.com)",
+      "WebFetch(domain:www.figma.com)",
+      "WebFetch(domain:www.plugma.dev)",
+      "WebFetch(domain:github.com)",
+      "Bash(npm run build:*)",
+      "mcp__figma-mcp__create_frame",
+      "mcp__figma-mcp__create_ellipse",
+      "mcp__figma-mcp__create_text",
+      "mcp__figma-mcp__create_rectangle",
+      "mcp__figma-mcp__add_shadow",
+      "mcp__figma-mcp__update_node",
+      "mcp__figma-mcp__zoom_to_node",
+      "mcp__figma-mcp__delete_node"
+    ]
+  }
+}

@@ -10,6 +10,7 @@ export default defineConfig({
       include: ["src/mcp-server/**", "src/websocket-server/**"],
       exclude: [
         "src/figma-plugin/**",
+        // Excluded because it requires a live WebSocket bridge and stdio transport to run
         "src/mcp-server/index.ts",
       ],
       thresholds: {

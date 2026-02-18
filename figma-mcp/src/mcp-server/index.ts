@@ -1,13 +1,15 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { WebSocket } from "ws";
+import { fileURLToPath } from "url";
 import { TOOL_REGISTRY } from "./tools.js";
 import { RequestTracker, generateRequestId } from "./request-tracker.js";
 
 // ─── Configuration ───────────────────────────────────────────────────────────
 
 const WS_URL = process.env.WS_URL ?? "ws://127.0.0.1:9001?role=mcp-client";
-const WS_TIMEOUT_MS = parseInt(process.env.WS_TIMEOUT_MS ?? "30000", 10);
+const _timeoutRaw = parseInt(process.env.WS_TIMEOUT_MS ?? "30000", 10);
+const WS_TIMEOUT_MS = Number.isNaN(_timeoutRaw) ? 30000 : _timeoutRaw;
 const WS_RECONNECT_INTERVAL_MS = 3000;
 
 // ─── Request Tracker ─────────────────────────────────────────────────────────
@@ -20,7 +22,10 @@ let ws: WebSocket | null = null;
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 
 function connectWebSocket(): void {
-  if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
+  if (
+    ws &&
+    (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)
+  ) {
     return;
   }
 
@@ -46,13 +51,23 @@ function connectWebSocket(): void {
       const msg = JSON.parse(raw) as Record<string, unknown>;
 
       if (msg.type === "RESPONSE" && typeof msg.requestId === "string") {
-        if (msg.success === true && typeof msg.data === "object" && msg.data !== null) {
+        if (
+          msg.success === true &&
+          typeof msg.data === "object" &&
+          msg.data !== null
+        ) {
           tracker.resolve(msg.requestId, msg.data as Record<string, unknown>);
-        } else if (msg.success === false && typeof msg.error === "object" && msg.error !== null) {
+        } else if (
+          msg.success === false &&
+          typeof msg.error === "object" &&
+          msg.error !== null
+        ) {
           const errObj = msg.error as { code?: string; message?: string };
           tracker.reject(
             msg.requestId,
-            new Error(`[${errObj.code ?? "UNKNOWN"}] ${errObj.message ?? "Unknown error"}`),
+            new Error(
+              `[${errObj.code ?? "UNKNOWN"}] ${errObj.message ?? "Unknown error"}`,
+            ),
           );
         }
       }
@@ -81,9 +96,14 @@ function scheduleReconnect(): void {
   }, WS_RECONNECT_INTERVAL_MS);
 }
 
-async function sendCommand(command: string, args: Record<string, unknown>): Promise<Record<string, unknown>> {
+async function sendCommand(
+  command: string,
+  args: Record<string, unknown>,
+): Promise<Record<string, unknown>> {
   if (!ws || ws.readyState !== WebSocket.OPEN) {
-    throw new Error("Not connected to bridge. Ensure the WebSocket bridge is running.");
+    throw new Error(
+      "Not connected to bridge. Ensure the WebSocket bridge is running.",
+    );
   }
 
   const requestId = generateRequestId();
@@ -145,7 +165,7 @@ async function main(): Promise<void> {
   console.error("[mcp] Figma MCP server started (stdio)");
 }
 
-const isDirectRun = process.argv[1]?.includes("mcp-server/index");
+const isDirectRun = process.argv[1] === fileURLToPath(import.meta.url);
 if (isDirectRun) {
   main().catch((err) => {
     console.error("[mcp] Fatal error:", err);

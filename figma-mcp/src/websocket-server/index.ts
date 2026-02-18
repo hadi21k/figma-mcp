@@ -1,6 +1,6 @@
 import { WebSocketServer, WebSocket, RawData } from "ws";
 import { IncomingMessage } from "http";
-import { URL } from "url";
+import { URL, fileURLToPath } from "url";
 
 // ─── Configuration ───────────────────────────────────────────────────────────
 
@@ -13,7 +13,7 @@ export interface BridgeConfig {
 
 export function loadConfig(): BridgeConfig {
   return {
-    host: "localhost",
+    host: "127.0.0.1",
     port: parseInt(process.env.WS_PORT ?? "9001", 10),
     timeoutMs: parseInt(process.env.WS_TIMEOUT_MS ?? "30000", 10),
     maxMessageBytes: 65_536,
@@ -410,11 +410,7 @@ export class FigmaBridge {
 
 // ─── Main Entry Point ────────────────────────────────────────────────────────
 
-//TODO to be cheked
-const isMainModule =
-  process.argv[1]?.endsWith("websocket-server/index.ts") ||
-  process.argv[1]?.endsWith("websocket-server/index.js") ||
-  process.argv[1]?.includes("websocket-server");
+const isMainModule = process.argv[1] === fileURLToPath(import.meta.url);
 
 if (isMainModule) {
   const bridge = new FigmaBridge();

@@ -33,7 +33,11 @@ export class RequestTracker {
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
         this.pending.delete(requestId);
-        reject(new Error(`Timeout: no response for ${requestId} within ${this.timeoutMs}ms`));
+        reject(
+          new Error(
+            `Timeout: no response for ${requestId} within ${this.timeoutMs}ms`,
+          ),
+        );
       }, this.timeoutMs);
 
       this.pending.set(requestId, { requestId, resolve, reject, timer });

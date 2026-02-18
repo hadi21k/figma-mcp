@@ -39,8 +39,58 @@
     #log {
       font-size: 10px;
       color: #888;
-      max-height: 120px;
+      max-height: 100px;
       overflow-y: auto;
+    }
+
+    #settings {
+      margin-top: 8px;
+      font-size: 10px;
+      color: #666;
+    }
+
+    #settings summary {
+      cursor: pointer;
+      user-select: none;
+      color: #999;
+    }
+
+    #settings summary:hover {
+      color: #555;
+    }
+
+    .settings-body {
+      margin-top: 6px;
+    }
+
+    .settings-body label {
+      display: block;
+      margin-bottom: 3px;
+      color: #888;
+    }
+
+    #urlInput {
+      width: 100%;
+      box-sizing: border-box;
+      font-size: 10px;
+      padding: 3px 5px;
+      border: 1px solid #ddd;
+      border-radius: 3px;
+      font-family: monospace;
+    }
+
+    #saveBtn {
+      margin-top: 5px;
+      font-size: 10px;
+      padding: 3px 10px;
+      border: 1px solid #bbb;
+      border-radius: 3px;
+      background: #f5f5f5;
+      cursor: pointer;
+    }
+
+    #saveBtn:hover {
+      background: #e8e8e8;
     }
   </style>
 </head>
@@ -51,17 +101,26 @@
     <span id="statusText">Initializing...</span>
   </div>
   <div id="log">
-    <div style="font-size: 10px; color: #999;">Ready to connect</div>
+    <div style="font-size: 10px; color: #999;">Waiting for bridge URL...</div>
   </div>
 
+  <details id="settings">
+    <summary>&#9881; Settings</summary>
+    <div class="settings-body">
+      <label>Bridge URL:</label>
+      <input id="urlInput" type="text" placeholder="ws://localhost:9001" />
+      <button id="saveBtn">Save &amp; Reconnect</button>
+    </div>
+  </details>
+
   <script>
-    // Immediately notify that UI is loaded
-    const statusDot = document.getElementById("statusDot");
-    const statusText = document.getElementById("statusText");
-    const logEl = document.getElementById("log");
+    var statusDot = document.getElementById("statusDot");
+    var statusText = document.getElementById("statusText");
+    var logEl = document.getElementById("log");
+    var urlInput = document.getElementById("urlInput");
 
     function log(msg) {
-      const line = document.createElement("div");
+      var line = document.createElement("div");
       line.textContent = new Date().toLocaleTimeString() + " " + msg;
       logEl.appendChild(line);
       logEl.scrollTop = logEl.scrollHeight;
@@ -75,22 +134,24 @@
       statusText.textContent = status.charAt(0).toUpperCase() + status.slice(1);
     }
 
-    // Set initial status
     setStatus("disconnected");
-    log("UI loaded, connecting to bridge...");
 
-    const BRIDGE_URL = "ws://localhost:9001";
-    const RECONNECT_BASE_MS = 1000;
-    const RECONNECT_MAX_MS = 30000;
-    const RECONNECT_MULTIPLIER = 2;
+    // Bridge URL — set dynamically via INIT message from code.ts (figma.clientStorage)
+    var BRIDGE_URL = null;
+    var RECONNECT_BASE_MS = 1000;
+    var RECONNECT_MAX_MS = 30000;
+    var RECONNECT_MULTIPLIER = 2;
 
-    let ws = null;
-    let reconnectDelay = RECONNECT_BASE_MS;
-    let reconnectTimer = null;
+    var ws = null;
+    var reconnectDelay = RECONNECT_BASE_MS;
+    var reconnectTimer = null;
 
     function connect() {
+      // Wait until code.ts sends the INIT message with the bridge URL
+      if (!BRIDGE_URL) return;
+
       setStatus("connecting");
-      log("Connecting to bridge...");
+      log("Connecting to " + BRIDGE_URL + "...");
 
       try {
         ws = new WebSocket(BRIDGE_URL);
@@ -106,10 +167,10 @@
         setStatus("connected");
         reconnectDelay = RECONNECT_BASE_MS;
 
-        // Send REGISTER
+        // Send REGISTER with a unique requestId each connection
         var registerMsg = {
           type: "REGISTER",
-          requestId: "req_0_register",
+          requestId: "req_" + Date.now() + "_" + Math.random().toString(36).substring(2, 8),
           pluginId: "figma-mcp-plugin",
           pluginVersion: "1.0.0"
         };
@@ -154,7 +215,7 @@
         scheduleReconnect();
       };
 
-      ws.onerror = function (error) {
+      ws.onerror = function () {
         log("WebSocket error");
       };
     }
@@ -173,18 +234,43 @@
       }, delay);
     }
 
+    // Messages from code.ts plugin sandbox
     window.onmessage = function (event) {
       var msg = event.data && event.data.pluginMessage;
-      if (msg && msg.type === "RESPONSE" && ws && ws.readyState === WebSocket.OPEN) {
+      if (!msg) return;
+
+      // INIT: code.ts sends the bridge URL (from clientStorage or default)
+      if (msg.type === "INIT") {
+        var newUrl = msg.bridgeUrl;
+        urlInput.value = newUrl;
+
+        if (BRIDGE_URL !== newUrl) {
+          // URL changed — close existing connection and reconnect
+          BRIDGE_URL = newUrl;
+          if (ws) { ws.close(); ws = null; }
+          if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
+          reconnectDelay = RECONNECT_BASE_MS;
+          connect();
+        } else if (!ws || ws.readyState === WebSocket.CLOSED || ws.readyState === WebSocket.CLOSING) {
+          connect();
+        }
+        return;
+      }
+
+      // RESPONSE from plugin sandbox — forward to bridge
+      if (msg.type === "RESPONSE" && ws && ws.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify(msg));
         log("RSP: " + (msg.success ? "OK" : "ERR") + " [" + msg.requestId + "]");
       }
     };
 
-    // Start connection asynchronously with very short delay
-    setTimeout(function () {
-      connect();
-    }, 50);
+    // Save settings button — sends new URL to code.ts which persists it
+    document.getElementById("saveBtn").addEventListener("click", function () {
+      var newUrl = urlInput.value.trim();
+      if (!newUrl) return;
+      log("Saving URL: " + newUrl);
+      parent.postMessage({ pluginMessage: { type: "SAVE_SETTINGS", bridgeUrl: newUrl } }, "*");
+    });
   </script>
 </body>
 

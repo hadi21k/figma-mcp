@@ -51,7 +51,10 @@ export function zodToJsonSchema(schema: z.ZodType): Record<string, unknown> {
     return { type: "string", const: schema.value };
   }
 
-  if (schema instanceof z.ZodUnion || schema instanceof z.ZodDiscriminatedUnion) {
+  if (
+    schema instanceof z.ZodUnion ||
+    schema instanceof z.ZodDiscriminatedUnion
+  ) {
     const options = schema.options as z.ZodType[];
     return { oneOf: options.map((o: z.ZodType) => zodToJsonSchema(o)) };
   }
