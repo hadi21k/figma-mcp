@@ -1,0 +1,13 @@
+{
+  "name": "Figma MCP Bridge",
+  "id": "figma-mcp-plugin",
+  "api": "1.0.0",
+  "main": "code.js",
+  "ui": "ui.html",
+  "editorType": ["figma"],
+  "networkAccess": {
+    "allowedDomains": ["none"],
+    "devAllowedDomains": ["localhost"],
+    "reasoning": "Connects to local WebSocket bridge for MCP communication"
+  }
+}

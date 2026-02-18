@@ -1,0 +1,16 @@
+{
+  "compilerOptions": {
+    "target": "ES6",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "lib": ["ES2015"],
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "outDir": "./dist/figma-plugin",
+    "rootDir": "./src/figma-plugin",
+    "typeRoots": ["./node_modules/@figma"]
+  },
+  "include": ["src/figma-plugin/**/*"],
+  "exclude": ["node_modules"]
+}

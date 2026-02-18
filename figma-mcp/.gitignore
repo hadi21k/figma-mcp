@@ -1,0 +1,5 @@
+node_modules/
+dist/
+src/figma-plugin/code.js
+coverage/
+*.tsbuildinfo
