@@ -7,11 +7,13 @@ export default defineConfig({
     include: ["tests/**/*.test.ts"],
     coverage: {
       provider: "v8",
-      include: ["src/mcp-server/**", "src/websocket-server/**"],
+      include: ["src/shared/**", "src/mcp-server/**", "src/websocket-server/**"],
       exclude: [
         "src/figma-plugin/**",
         // Excluded because it requires a live WebSocket bridge and stdio transport to run
         "src/mcp-server/index.ts",
+        // Excluded because it manages live WebSocket connections
+        "src/mcp-server/ws-client.ts",
       ],
       thresholds: {
         lines: 80,

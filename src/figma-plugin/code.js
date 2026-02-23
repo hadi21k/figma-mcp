@@ -1,6 +1,8 @@
 // Figma Plugin Sandbox — code.js
 // Runs inside Figma's plugin sandbox with access to figma.* API
 // Communicates with the UI iframe via figma.ui.postMessage / figma.ui.onmessage
+//
+// ALLOWED_COMMANDS source of truth: src/shared/constants.ts → COMMAND_NAMES
 
 // ─── Null-coalescing helper (Figma runtime is ES6, no ?? operator) ────────────
 

@@ -18,7 +18,7 @@ import {
   GetSelectionInput,
   RGBAColor,
   NodeId,
-} from "../../src/mcp-server/tools.js";
+} from "../../src/mcp-server/tools/index.js";
 
 // ─── Tool Registry Tests ─────────────────────────────────────────────────────
 

@@ -1,150 +1,27 @@
 import { WebSocketServer, WebSocket, RawData } from "ws";
 import { IncomingMessage } from "http";
 import { URL, fileURLToPath } from "url";
+import { BridgeConfig, loadConfig } from "./config.js";
+import { ProtocolError, parseAndValidate } from "./validation.js";
+import type {
+  RegisterMessage,
+  ErrorResponseMsg,
+  WireMessage,
+} from "../shared/protocol.js";
 
-// ─── Configuration ───────────────────────────────────────────────────────────
+// ─── Re-exports for consumers ────────────────────────────────────────────────
 
-export interface BridgeConfig {
-  host: string;
-  port: number;
-  timeoutMs: number;
-  maxMessageBytes: number;
-}
-
-export function loadConfig(): BridgeConfig {
-  return {
-    host: "127.0.0.1",
-    port: parseInt(process.env.WS_PORT ?? "9001", 10),
-    timeoutMs: parseInt(process.env.WS_TIMEOUT_MS ?? "30000", 10),
-    maxMessageBytes: 65_536,
-  };
-}
-
-// ─── Protocol Types ──────────────────────────────────────────────────────────
-
-export type ErrorCode =
-  | "NODE_NOT_FOUND"
-  | "INVALID_ARGS"
-  | "COMMAND_NOT_FOUND"
-  | "PLUGIN_DISCONNECTED"
-  | "TIMEOUT"
-  | "EXECUTION_ERROR"
-  | "FONT_UNAVAILABLE"
-  | "INTERNAL_ERROR";
-
-export interface RegisterMessage {
-  type: "REGISTER";
-  requestId: string;
-  pluginId: string;
-  pluginVersion: string;
-}
-
-export interface CommandMessage {
-  type: "COMMAND";
-  requestId: string;
-  command: string;
-  args: Record<string, unknown>;
-}
-
-export interface SuccessResponse {
-  type: "RESPONSE";
-  requestId: string;
-  success: true;
-  data: Record<string, unknown>;
-}
-
-export interface ErrorResponseMsg {
-  type: "RESPONSE";
-  requestId: string;
-  success: false;
-  error: {
-    code: ErrorCode;
-    message: string;
-    details?: unknown;
-  };
-}
-
-export type ResponseMessage = SuccessResponse | ErrorResponseMsg;
-export type WireMessage = RegisterMessage | CommandMessage | ResponseMessage;
-
-const REQUEST_ID_PATTERN = /^req_\d+_[a-z0-9]+$/;
-
-// ─── Message Validation ──────────────────────────────────────────────────────
-
-export class ProtocolError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = "ProtocolError";
-  }
-}
-
-export function parseAndValidate(raw: string): WireMessage {
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(raw);
-  } catch {
-    throw new ProtocolError("Invalid JSON");
-  }
-
-  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
-    throw new ProtocolError("Message must be a JSON object");
-  }
-
-  const obj = parsed as Record<string, unknown>;
-
-  if (!["REGISTER", "COMMAND", "RESPONSE"].includes(obj.type as string)) {
-    throw new ProtocolError(`Unknown message type: ${String(obj.type)}`);
-  }
-
-  if (
-    typeof obj.requestId !== "string" ||
-    !REQUEST_ID_PATTERN.test(obj.requestId)
-  ) {
-    throw new ProtocolError(`Invalid requestId: ${String(obj.requestId)}`);
-  }
-
-  switch (obj.type) {
-    case "REGISTER":
-      if (typeof obj.pluginId !== "string" || obj.pluginId.length === 0) {
-        throw new ProtocolError("REGISTER requires non-empty pluginId");
-      }
-      if (
-        typeof obj.pluginVersion !== "string" ||
-        obj.pluginVersion.length === 0
-      ) {
-        throw new ProtocolError("REGISTER requires non-empty pluginVersion");
-      }
-      break;
-    case "COMMAND":
-      if (typeof obj.command !== "string" || obj.command.length === 0) {
-        throw new ProtocolError("COMMAND requires non-empty command string");
-      }
-      if (
-        typeof obj.args !== "object" ||
-        obj.args === null ||
-        Array.isArray(obj.args)
-      ) {
-        throw new ProtocolError("COMMAND requires args object");
-      }
-      break;
-    case "RESPONSE":
-      if (typeof obj.success !== "boolean") {
-        throw new ProtocolError("RESPONSE requires success boolean");
-      }
-      if (obj.success && (typeof obj.data !== "object" || obj.data === null)) {
-        throw new ProtocolError("Success RESPONSE requires data object");
-      }
-      if (
-        !obj.success &&
-        (typeof obj.error !== "object" || obj.error === null)
-      ) {
-        throw new ProtocolError("Error RESPONSE requires error object");
-      }
-      break;
-  }
-
-  return obj as unknown as WireMessage;
-}
+export { BridgeConfig, loadConfig } from "./config.js";
+export { ProtocolError, parseAndValidate } from "./validation.js";
+export type {
+  ErrorCode,
+  RegisterMessage,
+  CommandMessage,
+  SuccessResponse,
+  ErrorResponseMsg,
+  ResponseMessage,
+  WireMessage,
+} from "../shared/protocol.js";
 
 // ─── Bridge Server ───────────────────────────────────────────────────────────
 
@@ -222,7 +99,6 @@ export class FigmaBridge {
     if (role === "mcp-client") {
       this.handleMcpClient(ws);
     } else {
-      // Treat as potential plugin — must send REGISTER as first message
       this.handlePotentialPlugin(ws);
     }
   }
@@ -268,7 +144,6 @@ export class FigmaBridge {
             return;
           }
 
-          // Register this as the plugin client
           if (
             this.pluginClient &&
             this.pluginClient.readyState === WebSocket.OPEN
@@ -283,7 +158,6 @@ export class FigmaBridge {
             `[bridge] Plugin registered: ${reg.pluginId} v${reg.pluginVersion}`,
           );
 
-          // Set up plugin message handler for subsequent messages
           return;
         } catch (err) {
           const errMsg = err instanceof Error ? err.message : String(err);
@@ -293,7 +167,6 @@ export class FigmaBridge {
         }
       }
 
-      // Subsequent messages from plugin
       this.onPluginMessage(raw);
     });
 
@@ -422,7 +295,6 @@ if (isMainModule) {
       process.exit(1);
     })
     .then(() => {
-      // Keep the process alive
       console.log("[bridge] Server running. Press Ctrl+C to stop.");
     });
 

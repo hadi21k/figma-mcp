@@ -17,7 +17,9 @@
       "mcp__figma-mcp__add_shadow",
       "mcp__figma-mcp__update_node",
       "mcp__figma-mcp__zoom_to_node",
-      "mcp__figma-mcp__delete_node"
+      "mcp__figma-mcp__delete_node",
+      "Bash(npm run test:coverage:*)",
+      "mcp__figma-mcp__get_document_info"
     ]
   }
 }

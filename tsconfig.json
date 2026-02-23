@@ -15,6 +15,6 @@
     "declarationMap": true,
     "sourceMap": true
   },
-  "include": ["src/mcp-server/**/*", "src/websocket-server/**/*"],
+  "include": ["src/shared/**/*", "src/mcp-server/**/*", "src/websocket-server/**/*"],
   "exclude": ["node_modules", "dist", "tests", "src/figma-plugin"]
 }
