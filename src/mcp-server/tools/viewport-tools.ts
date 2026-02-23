@@ -10,7 +10,8 @@ export const ZoomToNodeInput = z
 
 export const VIEWPORT_TOOLS: Record<string, ToolDefinition> = {
   zoom_to_node: {
-    description: "Scroll and zoom canvas to center on a node",
+    description:
+      "Scroll and zoom the canvas to center on a specific node. Use after creating or modifying elements so the user can see the result. Especially useful after creating new frames or components in empty canvas areas.",
     inputSchema: ZoomToNodeInput,
   },
 };

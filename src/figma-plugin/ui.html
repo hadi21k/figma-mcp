@@ -179,13 +179,46 @@
         log("Sent REGISTER");
       };
 
+      // ALLOWED_COMMANDS source of truth: src/shared/constants.ts → COMMAND_NAMES
       var ALLOWED_COMMANDS = [
+        // Read
         "get_document_info", "get_selection", "get_node",
-        "create_frame", "set_auto_layout",
-        "create_rectangle", "create_ellipse",
-        "create_text", "update_text",
-        "update_node", "add_shadow", "group_nodes", "delete_node",
-        "create_component", "zoom_to_node"
+        // Create
+        "create_frame", "create_rectangle", "create_ellipse", "create_text",
+        "create_line", "create_polygon",
+        // Modify
+        "set_auto_layout", "update_text", "update_node", "add_shadow",
+        // Style
+        "set_fill", "set_stroke", "set_corner_radius", "set_effects",
+        // Layout
+        "set_node_layout_properties",
+        // Organize
+        "group_nodes", "delete_node", "create_component",
+        "clone_node", "reorder_node",
+        // Component
+        "create_component_instance", "get_local_components", "list_available_fonts",
+        // Viewport
+        "zoom_to_node",
+        // Phase 2: Style system
+        "create_paint_style", "create_text_style", "get_local_styles", "apply_style",
+        // Phase 2: Image
+        "set_image_fill",
+        // Phase 2: Export
+        "export_node",
+        // Phase 2: Typography
+        "set_text_decoration", "set_text_case", "set_text_list",
+        // Phase 2: Constraints & grids
+        "set_constraints", "set_layout_grids",
+        // Phase 3: Batch
+        "batch_create", "batch_update",
+        // Phase 3: Vector
+        "create_vector", "create_boolean_operation",
+        // Phase 3: Pages
+        "create_page", "create_section",
+        // Phase 3: Traversal
+        "find_nodes",
+        // Phase 3: Variables
+        "create_variable_collection", "create_variable", "bind_variable"
       ];
       var REQ_ID_RE = /^req_\d+_[a-z0-9]+$/;
 

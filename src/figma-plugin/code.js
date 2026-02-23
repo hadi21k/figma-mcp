@@ -13,21 +13,72 @@ function nvl(val, fallback) {
 // ─── Command Allowlist ───────────────────────────────────────────────────────
 
 const ALLOWED_COMMANDS = new Set([
+  // Read
   "get_document_info",
   "get_selection",
   "get_node",
+  // Create
   "create_frame",
-  "set_auto_layout",
   "create_rectangle",
   "create_ellipse",
   "create_text",
+  "create_line",
+  "create_polygon",
+  // Modify
+  "set_auto_layout",
   "update_text",
   "update_node",
   "add_shadow",
+  // Style
+  "set_fill",
+  "set_stroke",
+  "set_corner_radius",
+  "set_effects",
+  // Layout
+  "set_node_layout_properties",
+  // Organize
   "group_nodes",
   "delete_node",
   "create_component",
+  "clone_node",
+  "reorder_node",
+  // Component
+  "create_component_instance",
+  "get_local_components",
+  "list_available_fonts",
+  // Viewport
   "zoom_to_node",
+  // Phase 2: Style system
+  "create_paint_style",
+  "create_text_style",
+  "get_local_styles",
+  "apply_style",
+  // Phase 2: Image
+  "set_image_fill",
+  // Phase 2: Export
+  "export_node",
+  // Phase 2: Typography
+  "set_text_decoration",
+  "set_text_case",
+  "set_text_list",
+  // Phase 2: Constraints & grids
+  "set_constraints",
+  "set_layout_grids",
+  // Phase 3: Batch
+  "batch_create",
+  "batch_update",
+  // Phase 3: Vector
+  "create_vector",
+  "create_boolean_operation",
+  // Phase 3: Pages
+  "create_page",
+  "create_section",
+  // Phase 3: Traversal
+  "find_nodes",
+  // Phase 3: Variables
+  "create_variable_collection",
+  "create_variable",
+  "bind_variable",
 ]);
 
 function isAllowedCommand(cmd) {
@@ -142,7 +193,10 @@ function fillsToFigma(fills) {
       };
     }
     if (
-      (f.type === "GRADIENT_LINEAR" || f.type === "GRADIENT_RADIAL") &&
+      (f.type === "GRADIENT_LINEAR" ||
+        f.type === "GRADIENT_RADIAL" ||
+        f.type === "GRADIENT_ANGULAR" ||
+        f.type === "GRADIENT_DIAMOND") &&
       f.gradientStops
     ) {
       return {
@@ -178,6 +232,8 @@ function serializeNode(node) {
   if ("strokes" in node && Array.isArray(node.strokes))
     base.strokes = node.strokes;
   if ("cornerRadius" in node) base.cornerRadius = node.cornerRadius;
+  if ("effects" in node && Array.isArray(node.effects))
+    base.effects = node.effects;
 
   if (node.type === "TEXT") {
     base.characters = node.characters;
@@ -190,7 +246,7 @@ function serializeNode(node) {
   return base;
 }
 
-// ─── Command Handlers ────────────────────────────────────────────────────────
+// ─── Phase 0/Original: Command Handlers ──────────────────────────────────────
 
 async function handleGetDocumentInfo(_args) {
   const pages = figma.root.children.map((page) => ({
@@ -287,11 +343,11 @@ async function handleSetAutoLayout(args) {
   node.itemSpacing = assertNumber(nvl(args.gap, 0), "gap", 0, 10000);
   node.primaryAxisAlignItems = assertString(
     nvl(args.primaryAxisAlign, "MIN"),
-    "primaryAxisAlign",
+    "primaryAxisAlign"
   );
   node.counterAxisAlignItems = assertString(
     nvl(args.counterAxisAlign, "MIN"),
-    "counterAxisAlign",
+    "counterAxisAlign"
   );
 
   const padding = args.padding;
@@ -300,26 +356,44 @@ async function handleSetAutoLayout(args) {
       nvl(padding.top, 0),
       "padding.top",
       0,
-      10000,
+      10000
     );
     node.paddingRight = assertNumber(
       nvl(padding.right, 0),
       "padding.right",
       0,
-      10000,
+      10000
     );
     node.paddingBottom = assertNumber(
       nvl(padding.bottom, 0),
       "padding.bottom",
       0,
-      10000,
+      10000
     );
     node.paddingLeft = assertNumber(
       nvl(padding.left, 0),
       "padding.left",
       0,
-      10000,
+      10000
     );
+  }
+
+  if (args.layoutWrap !== undefined) {
+    node.layoutWrap = assertString(
+      nvl(args.layoutWrap, "NO_WRAP"),
+      "layoutWrap"
+    );
+  }
+  if (args.counterAxisSpacing !== undefined) {
+    node.counterAxisSpacing = assertNumber(
+      args.counterAxisSpacing,
+      "counterAxisSpacing",
+      0,
+      10000
+    );
+  }
+  if (args.strokesIncludedInLayout !== undefined) {
+    node.strokesIncludedInLayout = !!args.strokesIncludedInLayout;
   }
 
   return { nodeId: node.id, layoutMode: node.layoutMode };
@@ -335,7 +409,7 @@ async function handleCreateRectangle(args) {
     nvl(args.cornerRadius, 0),
     "cornerRadius",
     0,
-    10000,
+    10000
   );
   const opacity = assertNumber(nvl(args.opacity, 1), "opacity", 0, 1);
   const parentId = assertOptionalString(args.parentId, "parentId");
@@ -358,11 +432,11 @@ async function handleCreateRectangle(args) {
       nvl(stroke.weight, 1),
       "stroke.weight",
       0,
-      100,
+      100
     );
     const strokeAlign = assertString(
       nvl(stroke.align, "INSIDE"),
-      "stroke.align",
+      "stroke.align"
     );
     rect.strokes = [
       {
@@ -416,27 +490,27 @@ async function handleCreateText(args) {
   const typo = nvl(args.typography, {});
   const fontFamily = assertString(
     nvl(typo.fontFamily, "Inter"),
-    "typography.fontFamily",
+    "typography.fontFamily"
   );
   const fontStyle = assertString(
     nvl(typo.fontStyle, "Regular"),
-    "typography.fontStyle",
+    "typography.fontStyle"
   );
   const fontSize = assertNumber(
     nvl(typo.fontSize, 16),
     "typography.fontSize",
     1,
-    1000,
+    1000
   );
   const textAlign = assertString(
     nvl(typo.textAlign, "LEFT"),
-    "typography.textAlign",
+    "typography.textAlign"
   );
   const letterSpacing = assertNumber(
     nvl(typo.letterSpacing, 0),
     "typography.letterSpacing",
     -100,
-    1000,
+    1000
   );
   const lineHeight = typo.lineHeight;
 
@@ -502,11 +576,11 @@ async function handleUpdateText(args) {
     if (typo.fontFamily || typo.fontStyle) {
       const family = assertString(
         nvl(typo.fontFamily, fontName.family),
-        "fontFamily",
+        "fontFamily"
       );
       const style = assertString(
         nvl(typo.fontStyle, fontName.style),
-        "fontStyle",
+        "fontStyle"
       );
       await figma.loadFontAsync({ family: family, style: style });
       node.fontName = { family: family, style: style };
@@ -558,7 +632,7 @@ async function handleUpdateNode(args) {
     args.cornerRadius,
     "cornerRadius",
     0,
-    10000,
+    10000
   );
   const fills = assertOptionalFills(args.fills, "fills");
 
@@ -589,7 +663,6 @@ async function handleUpdateNode(args) {
     node.name = name;
     updatedFields.push("name");
   }
-
   if (cornerRadius !== undefined && "cornerRadius" in node) {
     node.cornerRadius = cornerRadius;
     updatedFields.push("cornerRadius");
@@ -606,7 +679,7 @@ async function handleAddShadow(args) {
   const nodeId = assertString(args.nodeId, "nodeId");
   const color = assertRGBA(
     nvl(args.color, { r: 0, g: 0, b: 0, a: 0.25 }),
-    "color",
+    "color"
   );
   const offsetX = assertNumber(nvl(args.offsetX, 0), "offsetX", -1000, 1000);
   const offsetY = assertNumber(nvl(args.offsetY, 4), "offsetY", -1000, 1000);
@@ -701,24 +774,915 @@ async function handleZoomToNode(args) {
   };
 }
 
+// ─── Phase 1: Node Operations ─────────────────────────────────────────────────
+
+async function handleCloneNode(args) {
+  const nodeId = assertString(args.nodeId, "nodeId");
+  const node = findNode(nodeId);
+  const clone = node.clone();
+
+  if (args.x !== undefined)
+    clone.x = assertNumber(args.x, "x", -100000, 100000);
+  if (args.y !== undefined)
+    clone.y = assertNumber(args.y, "y", -100000, 100000);
+
+  if (args.parentId) {
+    const parent = resolveParent(assertString(args.parentId, "parentId"));
+    if (parent !== figma.currentPage) parent.appendChild(clone);
+  }
+
+  return { nodeId: clone.id, name: clone.name, type: clone.type };
+}
+
+async function handleReorderNode(args) {
+  const nodeId = assertString(args.nodeId, "nodeId");
+  const index = assertNumber(args.index, "index", 0, 10000);
+  const node = findNode(nodeId);
+  const parent = node.parent;
+  if (!parent) throw new Error(`Node ${nodeId} has no parent`);
+  if (!("insertChild" in parent))
+    throw new Error(`Parent does not support reordering`);
+  parent.insertChild(index, node);
+  return { nodeId: node.id, newIndex: index };
+}
+
+// ─── Phase 1: Component Instances ─────────────────────────────────────────────
+
+async function handleCreateComponentInstance(args) {
+  const componentId = assertString(args.componentId, "componentId");
+  const x = assertNumber(nvl(args.x, 0), "x", -100000, 100000);
+  const y = assertNumber(nvl(args.y, 0), "y", -100000, 100000);
+  const parentId = assertOptionalString(args.parentId, "parentId");
+
+  const component = figma.getNodeById(componentId);
+  if (!component) throw new Error(`Component ${componentId} not found`);
+  if (component.type !== "COMPONENT")
+    throw new Error(`Node ${componentId} is not a COMPONENT`);
+
+  const instance = component.createInstance();
+  instance.x = x;
+  instance.y = y;
+
+  const parent = resolveParent(parentId);
+  if (parent !== figma.currentPage) parent.appendChild(instance);
+
+  return {
+    nodeId: instance.id,
+    name: instance.name,
+    type: "INSTANCE",
+    componentId: componentId,
+  };
+}
+
+async function handleGetLocalComponents(_args) {
+  const components = figma.root.findAll(function (n) {
+    return n.type === "COMPONENT";
+  });
+  return {
+    count: components.length,
+    components: components.map(function (c) {
+      return {
+        id: c.id,
+        name: c.name,
+        key: c.key || "",
+        description: c.description || "",
+      };
+    }),
+  };
+}
+
+async function handleListAvailableFonts(_args) {
+  const fonts = await figma.listAvailableFontsAsync();
+  return {
+    count: fonts.length,
+    fonts: fonts.map(function (f) {
+      return { family: f.fontName.family, style: f.fontName.style };
+    }),
+  };
+}
+
+// ─── Phase 1: Advanced Styling ────────────────────────────────────────────────
+
+async function handleSetFill(args) {
+  const nodeId = assertString(args.nodeId, "nodeId");
+  const node = findNode(nodeId);
+  if (!("fills" in node))
+    throw new Error(`Node ${nodeId} does not support fills`);
+  const fills = assertFills(args.fills, "fills");
+  node.fills = fillsToFigma(fills);
+  return { nodeId: node.id, fillCount: node.fills.length };
+}
+
+async function handleSetStroke(args) {
+  const nodeId = assertString(args.nodeId, "nodeId");
+  const node = findNode(nodeId);
+  if (!("strokes" in node))
+    throw new Error(`Node ${nodeId} does not support strokes`);
+
+  if (args.strokes !== undefined) {
+    if (args.strokes.length === 0) {
+      node.strokes = [];
+    } else {
+      node.strokes = args.strokes.map(function (s) {
+        const c = assertRGBA(s.color, "stroke.color");
+        return {
+          type: "SOLID",
+          color: { r: c.r, g: c.g, b: c.b },
+          opacity: c.a * nvl(s.opacity, 1),
+        };
+      });
+    }
+  }
+
+  if (args.strokeWeight !== undefined)
+    node.strokeWeight = assertNumber(args.strokeWeight, "strokeWeight", 0, 100);
+  if (args.strokeAlign !== undefined)
+    node.strokeAlign = assertString(args.strokeAlign, "strokeAlign");
+  if (args.dashPattern !== undefined && Array.isArray(args.dashPattern))
+    node.dashPattern = args.dashPattern;
+  if (args.strokeCap !== undefined)
+    node.strokeCap = assertString(args.strokeCap, "strokeCap");
+  if (args.strokeJoin !== undefined)
+    node.strokeJoin = assertString(args.strokeJoin, "strokeJoin");
+
+  return { nodeId: node.id };
+}
+
+async function handleSetCornerRadius(args) {
+  const nodeId = assertString(args.nodeId, "nodeId");
+  const node = findNode(nodeId);
+
+  if (!("cornerRadius" in node))
+    throw new Error(`Node ${nodeId} does not support corner radius`);
+
+  if (args.topLeft !== undefined)
+    node.topLeftRadius = assertNumber(args.topLeft, "topLeft", 0, 10000);
+  if (args.topRight !== undefined)
+    node.topRightRadius = assertNumber(args.topRight, "topRight", 0, 10000);
+  if (args.bottomRight !== undefined)
+    node.bottomRightRadius = assertNumber(
+      args.bottomRight,
+      "bottomRight",
+      0,
+      10000
+    );
+  if (args.bottomLeft !== undefined)
+    node.bottomLeftRadius = assertNumber(
+      args.bottomLeft,
+      "bottomLeft",
+      0,
+      10000
+    );
+  if (args.cornerSmoothing !== undefined)
+    node.cornerSmoothing = assertNumber(
+      args.cornerSmoothing,
+      "cornerSmoothing",
+      0,
+      1
+    );
+
+  return { nodeId: node.id };
+}
+
+async function handleSetEffects(args) {
+  const nodeId = assertString(args.nodeId, "nodeId");
+  const node = findNode(nodeId);
+  if (!("effects" in node))
+    throw new Error(`Node ${nodeId} does not support effects`);
+
+  if (!Array.isArray(args.effects)) throw new Error("effects must be an array");
+
+  node.effects = args.effects.map(function (e, i) {
+    const t = e.type;
+    if (t === "DROP_SHADOW" || t === "INNER_SHADOW") {
+      const c = assertRGBA(
+        nvl(e.color, { r: 0, g: 0, b: 0, a: 0.25 }),
+        "effects[" + i + "].color"
+      );
+      return {
+        type: t,
+        color: { r: c.r, g: c.g, b: c.b, a: c.a },
+        offset: { x: nvl(e.offsetX, 0), y: nvl(e.offsetY, 4) },
+        radius: nvl(e.blur, 8),
+        spread: nvl(e.spread, 0),
+        visible: nvl(e.visible, true),
+        blendMode: nvl(e.blendMode, "NORMAL"),
+      };
+    }
+    if (t === "LAYER_BLUR" || t === "BACKGROUND_BLUR") {
+      return {
+        type: t,
+        radius: nvl(e.radius, t === "BACKGROUND_BLUR" ? 8 : 4),
+        visible: nvl(e.visible, true),
+      };
+    }
+    throw new Error("Unsupported effect type: " + t);
+  });
+
+  return { nodeId: node.id, effectCount: node.effects.length };
+}
+
+// ─── Phase 1: Advanced Auto-Layout ───────────────────────────────────────────
+
+async function handleSetNodeLayoutProperties(args) {
+  const nodeId = assertString(args.nodeId, "nodeId");
+  const node = findNode(nodeId);
+
+  if (args.layoutAlign !== undefined)
+    node.layoutAlign = assertString(args.layoutAlign, "layoutAlign");
+  if (args.layoutGrow !== undefined)
+    node.layoutGrow = assertNumber(args.layoutGrow, "layoutGrow", 0, 1);
+  if (args.layoutPositioning !== undefined)
+    node.layoutPositioning = assertString(
+      args.layoutPositioning,
+      "layoutPositioning"
+    );
+  if (args.layoutSizingHorizontal !== undefined)
+    node.layoutSizingHorizontal = assertString(
+      args.layoutSizingHorizontal,
+      "layoutSizingHorizontal"
+    );
+  if (args.layoutSizingVertical !== undefined)
+    node.layoutSizingVertical = assertString(
+      args.layoutSizingVertical,
+      "layoutSizingVertical"
+    );
+  if (args.minWidth !== undefined)
+    node.minWidth = assertNumber(args.minWidth, "minWidth", 0, 100000);
+  if (args.maxWidth !== undefined)
+    node.maxWidth = assertNumber(args.maxWidth, "maxWidth", 0, 100000);
+  if (args.minHeight !== undefined)
+    node.minHeight = assertNumber(args.minHeight, "minHeight", 0, 100000);
+  if (args.maxHeight !== undefined)
+    node.maxHeight = assertNumber(args.maxHeight, "maxHeight", 0, 100000);
+
+  return { nodeId: node.id };
+}
+
+// ─── Phase 1: Additional Shapes ───────────────────────────────────────────────
+
+async function handleCreateLine(args) {
+  const name = assertString(nvl(args.name, "Line"), "name");
+  const x = assertNumber(nvl(args.x, 0), "x", -100000, 100000);
+  const y = assertNumber(nvl(args.y, 0), "y", -100000, 100000);
+  const length = assertNumber(nvl(args.length, 100), "length", 1, 100000);
+  const rotation = assertNumber(nvl(args.rotation, 0), "rotation", -360, 360);
+  const strokeWeight = assertNumber(
+    nvl(args.strokeWeight, 1),
+    "strokeWeight",
+    0.01,
+    100
+  );
+  const parentId = assertOptionalString(args.parentId, "parentId");
+
+  const strokeColor = assertRGBA(
+    nvl(args.strokeColor, { r: 0, g: 0, b: 0, a: 1 }),
+    "strokeColor"
+  );
+
+  const line = figma.createLine();
+  line.name = name;
+  line.x = x;
+  line.y = y;
+  line.resize(length, 0);
+  line.rotation = rotation;
+  line.strokes = [
+    {
+      type: "SOLID",
+      color: { r: strokeColor.r, g: strokeColor.g, b: strokeColor.b },
+      opacity: strokeColor.a,
+    },
+  ];
+  line.strokeWeight = strokeWeight;
+
+  const parent = resolveParent(parentId);
+  if (parent !== figma.currentPage) parent.appendChild(line);
+
+  return { nodeId: line.id, name: line.name, type: "LINE" };
+}
+
+async function handleCreatePolygon(args) {
+  const name = assertString(nvl(args.name, "Polygon"), "name");
+  const pointCount = assertNumber(nvl(args.pointCount, 3), "pointCount", 3, 20);
+  const width = assertNumber(nvl(args.width, 100), "width", 1, 100000);
+  const height = assertNumber(nvl(args.height, 100), "height", 1, 100000);
+  const x = assertNumber(nvl(args.x, 0), "x", -100000, 100000);
+  const y = assertNumber(nvl(args.y, 0), "y", -100000, 100000);
+  const parentId = assertOptionalString(args.parentId, "parentId");
+  const fills = args.fills ? assertFills(args.fills, "fills") : undefined;
+
+  const poly = figma.createPolygon();
+  poly.name = name;
+  poly.pointCount = pointCount;
+  poly.resize(width, height);
+  poly.x = x;
+  poly.y = y;
+
+  if (fills) poly.fills = fillsToFigma(fills);
+
+  const parent = resolveParent(parentId);
+  if (parent !== figma.currentPage) parent.appendChild(poly);
+
+  return { nodeId: poly.id, name: poly.name, type: "POLYGON" };
+}
+
+// ─── Phase 2: Style System ────────────────────────────────────────────────────
+
+async function handleCreatePaintStyle(args) {
+  const name = assertString(args.name, "name");
+  const fills = assertFills(args.paints, "paints");
+  const style = figma.createPaintStyle();
+  style.name = name;
+  style.paints = fillsToFigma(fills);
+  return { styleId: style.id, name: style.name, type: "PAINT" };
+}
+
+async function handleCreateTextStyle(args) {
+  const name = assertString(args.name, "name");
+  const typo = args.typography || {};
+  const fontFamily = assertString(
+    nvl(typo.fontFamily, "Inter"),
+    "typography.fontFamily"
+  );
+  const fontStyle = assertString(
+    nvl(typo.fontStyle, "Regular"),
+    "typography.fontStyle"
+  );
+  const fontSize = assertNumber(
+    nvl(typo.fontSize, 16),
+    "typography.fontSize",
+    1,
+    1000
+  );
+
+  await figma.loadFontAsync({ family: fontFamily, style: fontStyle });
+
+  const style = figma.createTextStyle();
+  style.name = name;
+  style.fontName = { family: fontFamily, style: fontStyle };
+  style.fontSize = fontSize;
+
+  if (typo.textAlign)
+    style.textAlignHorizontal = assertString(typo.textAlign, "textAlign");
+  if (typo.letterSpacing !== undefined)
+    style.letterSpacing = {
+      value: assertNumber(typo.letterSpacing, "letterSpacing", -100, 1000),
+      unit: "PIXELS",
+    };
+  if (typo.lineHeight) {
+    const unit = assertString(
+      nvl(typo.lineHeight.unit, "AUTO"),
+      "lineHeight.unit"
+    );
+    if (unit === "AUTO") {
+      style.lineHeight = { unit: "AUTO" };
+    } else if (unit === "PIXELS" || unit === "PERCENT") {
+      style.lineHeight = {
+        value: assertNumber(typo.lineHeight.value, "lineHeight.value", 0),
+        unit: unit,
+      };
+    }
+  }
+
+  return { styleId: style.id, name: style.name, type: "TEXT" };
+}
+
+async function handleGetLocalStyles(_args) {
+  const paintStyles = figma.getLocalPaintStyles().map(function (s) {
+    return { id: s.id, name: s.name, type: "PAINT" };
+  });
+  const textStyles = figma.getLocalTextStyles().map(function (s) {
+    return { id: s.id, name: s.name, type: "TEXT" };
+  });
+  const effectStyles = figma.getLocalEffectStyles().map(function (s) {
+    return { id: s.id, name: s.name, type: "EFFECT" };
+  });
+  return {
+    paintStyles: paintStyles,
+    textStyles: textStyles,
+    effectStyles: effectStyles,
+    totalCount: paintStyles.length + textStyles.length + effectStyles.length,
+  };
+}
+
+async function handleApplyStyle(args) {
+  const nodeId = assertString(args.nodeId, "nodeId");
+  const node = findNode(nodeId);
+  const applied = [];
+
+  if (args.fillStyleId !== undefined) {
+    node.fillStyleId = assertString(args.fillStyleId, "fillStyleId");
+    applied.push("fillStyleId");
+  }
+  if (args.strokeStyleId !== undefined) {
+    node.strokeStyleId = assertString(args.strokeStyleId, "strokeStyleId");
+    applied.push("strokeStyleId");
+  }
+  if (args.textStyleId !== undefined) {
+    if (node.type !== "TEXT")
+      throw new Error("textStyleId can only be applied to TEXT nodes");
+    node.textStyleId = assertString(args.textStyleId, "textStyleId");
+    applied.push("textStyleId");
+  }
+  if (args.effectStyleId !== undefined) {
+    node.effectStyleId = assertString(args.effectStyleId, "effectStyleId");
+    applied.push("effectStyleId");
+  }
+
+  return { nodeId: node.id, applied: applied };
+}
+
+// ─── Phase 2: Images ─────────────────────────────────────────────────────────
+
+async function handleSetImageFill(args) {
+  const nodeId = assertString(args.nodeId, "nodeId");
+  const imageData = assertString(args.imageData, "imageData");
+  const scaleMode = assertString(nvl(args.scaleMode, "FILL"), "scaleMode");
+  const node = findNode(nodeId);
+  if (!("fills" in node))
+    throw new Error(`Node ${nodeId} does not support fills`);
+
+  // Decode base64 to Uint8Array
+  const binaryStr = atob(imageData);
+  const bytes = new Uint8Array(binaryStr.length);
+  for (let i = 0; i < binaryStr.length; i++) {
+    bytes[i] = binaryStr.charCodeAt(i);
+  }
+
+  const image = figma.createImage(bytes);
+  node.fills = [{ type: "IMAGE", scaleMode: scaleMode, imageHash: image.hash }];
+
+  return { nodeId: node.id, imageHash: image.hash, scaleMode: scaleMode };
+}
+
+// ─── Phase 2: Export ──────────────────────────────────────────────────────────
+
+async function handleExportNode(args) {
+  const nodeId = assertString(args.nodeId, "nodeId");
+  const format = assertString(nvl(args.format, "PNG"), "format");
+  const scale = assertNumber(nvl(args.scale, 1), "scale", 0.01, 4);
+  const node = findNode(nodeId);
+
+  const exportSettings = { format: format };
+  if (format === "PNG" || format === "JPG") {
+    exportSettings.constraint = { type: "SCALE", value: scale };
+  }
+
+  const bytes = await node.exportAsync(exportSettings);
+  let base64Data;
+  if (typeof Buffer !== "undefined") {
+    base64Data = Buffer.from(bytes).toString("base64");
+  } else {
+    let binary = "";
+    for (let i = 0; i < bytes.length; i++) {
+      binary += String.fromCharCode(bytes[i]);
+    }
+    base64Data = btoa(binary);
+  }
+
+  return {
+    nodeId: node.id,
+    format: format,
+    scale: scale,
+    base64Data: base64Data,
+    size: bytes.length,
+  };
+}
+
+// ─── Phase 2: Typography ──────────────────────────────────────────────────────
+
+async function handleSetTextDecoration(args) {
+  const nodeId = assertString(args.nodeId, "nodeId");
+  const textDecoration = assertString(args.textDecoration, "textDecoration");
+  const node = findNode(nodeId);
+  if (node.type !== "TEXT")
+    throw new Error(`Node ${nodeId} is not a TEXT node`);
+
+  const fontName =
+    node.fontName === figma.mixed
+      ? { family: "Inter", style: "Regular" }
+      : node.fontName;
+  await figma.loadFontAsync(fontName);
+  node.textDecoration = textDecoration;
+
+  return { nodeId: node.id, textDecoration: textDecoration };
+}
+
+async function handleSetTextCase(args) {
+  const nodeId = assertString(args.nodeId, "nodeId");
+  const textCase = assertString(args.textCase, "textCase");
+  const node = findNode(nodeId);
+  if (node.type !== "TEXT")
+    throw new Error(`Node ${nodeId} is not a TEXT node`);
+
+  const fontName =
+    node.fontName === figma.mixed
+      ? { family: "Inter", style: "Regular" }
+      : node.fontName;
+  await figma.loadFontAsync(fontName);
+  node.textCase = textCase;
+
+  return { nodeId: node.id, textCase: textCase };
+}
+
+async function handleSetTextList(args) {
+  const nodeId = assertString(args.nodeId, "nodeId");
+  const listType = assertString(args.listType, "listType");
+  const node = findNode(nodeId);
+  if (node.type !== "TEXT")
+    throw new Error(`Node ${nodeId} is not a TEXT node`);
+
+  const fontName =
+    node.fontName === figma.mixed
+      ? { family: "Inter", style: "Regular" }
+      : node.fontName;
+  await figma.loadFontAsync(fontName);
+  node.setRangeListOptions(0, node.characters.length, { type: listType });
+
+  return { nodeId: node.id, listType: listType };
+}
+
+// ─── Phase 2: Constraints & Grids ────────────────────────────────────────────
+
+async function handleSetConstraints(args) {
+  const nodeId = assertString(args.nodeId, "nodeId");
+  const horizontal = assertString(args.horizontal, "horizontal");
+  const vertical = assertString(args.vertical, "vertical");
+  const node = findNode(nodeId);
+  if (!("constraints" in node))
+    throw new Error(`Node ${nodeId} does not support constraints`);
+  node.constraints = { horizontal: horizontal, vertical: vertical };
+  return { nodeId: node.id, constraints: node.constraints };
+}
+
+async function handleSetLayoutGrids(args) {
+  const nodeId = assertString(args.nodeId, "nodeId");
+  const node = findNode(nodeId);
+  if (node.type !== "FRAME" && node.type !== "COMPONENT")
+    throw new Error("Layout grids can only be set on frames or components");
+  if (!Array.isArray(args.grids)) throw new Error("grids must be an array");
+
+  node.layoutGrids = args.grids.map(function (g, i) {
+    return {
+      pattern: assertString(g.pattern, "grids[" + i + "].pattern"),
+      count: assertNumber(nvl(g.count, 12), "grids[" + i + "].count", 1, 100),
+      gutterSize: assertNumber(
+        nvl(g.gutterSize, 16),
+        "grids[" + i + "].gutterSize",
+        0,
+        1000
+      ),
+      offset: assertNumber(
+        nvl(g.offset, 0),
+        "grids[" + i + "].offset",
+        0,
+        1000
+      ),
+      alignment: nvl(g.alignment, "STRETCH"),
+      sectionSize:
+        g.sectionSize !== undefined
+          ? assertNumber(g.sectionSize, "sectionSize", 1, 1000)
+          : undefined,
+      color: g.color
+        ? {
+            r: g.color.r,
+            g: g.color.g,
+            b: g.color.b,
+            a: nvl(g.color.a, 0.1),
+          }
+        : { r: 0.1, g: 0.1, b: 1, a: 0.1 },
+      visible: nvl(g.visible, true),
+    };
+  });
+
+  return { nodeId: node.id, gridCount: node.layoutGrids.length };
+}
+
+// ─── Phase 3: Batch Operations ────────────────────────────────────────────────
+
+async function handleBatchCreate(args) {
+  if (!Array.isArray(args.operations))
+    throw new Error("operations must be an array");
+  const results = [];
+
+  for (let i = 0; i < args.operations.length; i++) {
+    const op = args.operations[i];
+    try {
+      const handler = handlers[op.command];
+      if (!handler) throw new Error("Unknown command: " + op.command);
+      const result = await handler(op.args || {});
+      results.push({ index: i, success: true, data: result });
+    } catch (err) {
+      results.push({
+        index: i,
+        success: false,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
+  return {
+    results: results,
+    successCount: results.filter(function (r) {
+      return r.success;
+    }).length,
+  };
+}
+
+async function handleBatchUpdate(args) {
+  if (!Array.isArray(args.updates)) throw new Error("updates must be an array");
+  const results = [];
+
+  for (let i = 0; i < args.updates.length; i++) {
+    const update = args.updates[i];
+    try {
+      const result = await handleUpdateNode(update);
+      results.push({
+        index: i,
+        nodeId: update.nodeId,
+        success: true,
+        data: result,
+      });
+    } catch (err) {
+      results.push({
+        index: i,
+        nodeId: update.nodeId,
+        success: false,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
+  return {
+    results: results,
+    successCount: results.filter(function (r) {
+      return r.success;
+    }).length,
+  };
+}
+
+// ─── Phase 3: Vector ─────────────────────────────────────────────────────────
+
+async function handleCreateVector(args) {
+  const name = assertString(nvl(args.name, "Vector"), "name");
+  const x = assertNumber(nvl(args.x, 0), "x", -100000, 100000);
+  const y = assertNumber(nvl(args.y, 0), "y", -100000, 100000);
+  const parentId = assertOptionalString(args.parentId, "parentId");
+
+  if (!Array.isArray(args.vectorPaths) || args.vectorPaths.length === 0)
+    throw new Error("vectorPaths must be a non-empty array");
+
+  const vector = figma.createVector();
+  vector.name = name;
+  vector.x = x;
+  vector.y = y;
+  vector.vectorPaths = args.vectorPaths.map(function (p, i) {
+    return {
+      windingRule: nvl(p.windingRule, "EVENODD"),
+      data: assertString(p.data, "vectorPaths[" + i + "].data"),
+    };
+  });
+
+  if (args.fills) {
+    const fills = assertFills(args.fills, "fills");
+    vector.fills = fillsToFigma(fills);
+  }
+
+  const parent = resolveParent(parentId);
+  if (parent !== figma.currentPage) parent.appendChild(vector);
+
+  return { nodeId: vector.id, name: vector.name, type: "VECTOR" };
+}
+
+async function handleCreateBooleanOperation(args) {
+  if (!Array.isArray(args.nodeIds) || args.nodeIds.length < 2)
+    throw new Error("nodeIds must have at least 2 elements");
+
+  const operation = assertString(args.operation, "operation");
+  const nodes = args.nodeIds.map(function (id) {
+    return findNode(assertString(id, "nodeId"));
+  });
+  const parent = nvl(nodes[0].parent, figma.currentPage);
+
+  var result;
+  if (operation === "UNION") result = figma.union(nodes, parent);
+  else if (operation === "INTERSECT") result = figma.intersect(nodes, parent);
+  else if (operation === "SUBTRACT") result = figma.subtract(nodes, parent);
+  else if (operation === "EXCLUDE") result = figma.exclude(nodes, parent);
+  else throw new Error("Unknown operation: " + operation);
+
+  if (args.name) result.name = assertString(args.name, "name");
+
+  return { nodeId: result.id, name: result.name, type: result.type };
+}
+
+// ─── Phase 3: Pages & Sections ───────────────────────────────────────────────
+
+async function handleCreatePage(args) {
+  const name = assertString(nvl(args.name, "Page"), "name");
+  const page = figma.createPage();
+  page.name = name;
+  return { pageId: page.id, name: page.name };
+}
+
+async function handleCreateSection(args) {
+  const name = assertString(nvl(args.name, "Section"), "name");
+  const x = assertNumber(nvl(args.x, 0), "x", -100000, 100000);
+  const y = assertNumber(nvl(args.y, 0), "y", -100000, 100000);
+  const width = assertNumber(nvl(args.width, 800), "width", 1, 100000);
+  const height = assertNumber(nvl(args.height, 600), "height", 1, 100000);
+
+  const section = figma.createSection();
+  section.name = name;
+  section.x = x;
+  section.y = y;
+  section.resizeWithoutConstraints(width, height);
+
+  if (args.fillColor) {
+    const c = assertRGBA(args.fillColor, "fillColor");
+    section.fills = [
+      {
+        type: "SOLID",
+        color: { r: c.r, g: c.g, b: c.b },
+        opacity: c.a,
+      },
+    ];
+  }
+
+  return { sectionId: section.id, name: section.name, type: "SECTION" };
+}
+
+// ─── Phase 3: Node Traversal ──────────────────────────────────────────────────
+
+async function handleFindNodes(args) {
+  const types = args.types || null;
+  const namePattern = assertOptionalString(args.namePattern, "namePattern");
+  const maxResults = assertNumber(
+    nvl(args.maxResults, 50),
+    "maxResults",
+    1,
+    200
+  );
+
+  var root;
+  if (args.parentId) {
+    root = findNode(assertString(args.parentId, "parentId"));
+  } else {
+    root = figma.currentPage;
+  }
+
+  if (!("findAll" in root))
+    throw new Error("Root node does not support findAll");
+
+  const found = root.findAll(function (node) {
+    const typeMatch = !types || types.includes(node.type);
+    const nameMatch = !namePattern || node.name.indexOf(namePattern) !== -1;
+    return typeMatch && nameMatch;
+  });
+
+  const limited = found.slice(0, maxResults);
+  return {
+    count: found.length,
+    nodes: limited.map(function (n) {
+      return { id: n.id, name: n.name, type: n.type };
+    }),
+  };
+}
+
+// ─── Phase 3: Variables ───────────────────────────────────────────────────────
+
+async function handleCreateVariableCollection(args) {
+  const name = assertString(args.name, "name");
+  const modes =
+    Array.isArray(args.modes) && args.modes.length > 0
+      ? args.modes
+      : ["Default"];
+
+  const collection = figma.variables.createVariableCollection(name);
+  // Rename the auto-created first mode
+  if (collection.modes.length > 0) {
+    collection.renameMode(collection.modes[0].modeId, modes[0]);
+  }
+  // Add additional modes
+  for (let i = 1; i < modes.length; i++) {
+    collection.addMode(assertString(modes[i], "modes[" + i + "]"));
+  }
+
+  return {
+    collectionId: collection.id,
+    name: collection.name,
+    modes: collection.modes,
+  };
+}
+
+async function handleCreateVariable(args) {
+  const name = assertString(args.name, "name");
+  const collectionId = assertString(args.collectionId, "collectionId");
+  const type = assertString(args.type, "type");
+
+  const collection = figma.variables.getVariableCollectionById(collectionId);
+  if (!collection)
+    throw new Error(`Variable collection ${collectionId} not found`);
+
+  const variable = figma.variables.createVariable(name, collection, type);
+
+  if (args.values && typeof args.values === "object") {
+    const entries = Object.entries(args.values);
+    for (let i = 0; i < entries.length; i++) {
+      variable.setValueForMode(entries[i][0], entries[i][1]);
+    }
+  }
+
+  return {
+    variableId: variable.id,
+    name: variable.name,
+    type: variable.resolvedType,
+  };
+}
+
+async function handleBindVariable(args) {
+  const nodeId = assertString(args.nodeId, "nodeId");
+  const property = assertString(args.property, "property");
+  const variableId = assertString(args.variableId, "variableId");
+
+  const node = findNode(nodeId);
+  const variable = figma.variables.getVariableById(variableId);
+  if (!variable) throw new Error(`Variable ${variableId} not found`);
+
+  node.setBoundVariable(property, variable);
+
+  return { nodeId: node.id, property: property, variableId: variableId };
+}
+
 // ─── Handler Registry ────────────────────────────────────────────────────────
 
 const handlers = {
+  // Read
   get_document_info: handleGetDocumentInfo,
   get_selection: handleGetSelection,
   get_node: handleGetNode,
+  // Create
   create_frame: handleCreateFrame,
-  set_auto_layout: handleSetAutoLayout,
   create_rectangle: handleCreateRectangle,
   create_ellipse: handleCreateEllipse,
   create_text: handleCreateText,
+  create_line: handleCreateLine,
+  create_polygon: handleCreatePolygon,
+  // Modify
+  set_auto_layout: handleSetAutoLayout,
   update_text: handleUpdateText,
   update_node: handleUpdateNode,
   add_shadow: handleAddShadow,
+  // Style
+  set_fill: handleSetFill,
+  set_stroke: handleSetStroke,
+  set_corner_radius: handleSetCornerRadius,
+  set_effects: handleSetEffects,
+  // Layout
+  set_node_layout_properties: handleSetNodeLayoutProperties,
+  // Organize
   group_nodes: handleGroupNodes,
   delete_node: handleDeleteNode,
   create_component: handleCreateComponent,
+  clone_node: handleCloneNode,
+  reorder_node: handleReorderNode,
+  // Component
+  create_component_instance: handleCreateComponentInstance,
+  get_local_components: handleGetLocalComponents,
+  list_available_fonts: handleListAvailableFonts,
+  // Viewport
   zoom_to_node: handleZoomToNode,
+  // Phase 2: Style system
+  create_paint_style: handleCreatePaintStyle,
+  create_text_style: handleCreateTextStyle,
+  get_local_styles: handleGetLocalStyles,
+  apply_style: handleApplyStyle,
+  // Phase 2: Image
+  set_image_fill: handleSetImageFill,
+  // Phase 2: Export
+  export_node: handleExportNode,
+  // Phase 2: Typography
+  set_text_decoration: handleSetTextDecoration,
+  set_text_case: handleSetTextCase,
+  set_text_list: handleSetTextList,
+  // Phase 2: Constraints & grids
+  set_constraints: handleSetConstraints,
+  set_layout_grids: handleSetLayoutGrids,
+  // Phase 3: Batch
+  batch_create: handleBatchCreate,
+  batch_update: handleBatchUpdate,
+  // Phase 3: Vector
+  create_vector: handleCreateVector,
+  create_boolean_operation: handleCreateBooleanOperation,
+  // Phase 3: Pages
+  create_page: handleCreatePage,
+  create_section: handleCreateSection,
+  // Phase 3: Traversal
+  find_nodes: handleFindNodes,
+  // Phase 3: Variables
+  create_variable_collection: handleCreateVariableCollection,
+  create_variable: handleCreateVariable,
+  bind_variable: handleBindVariable,
 };
 
 // ─── Message Dispatcher ──────────────────────────────────────────────────────
@@ -732,7 +1696,7 @@ function sendResponse(requestId, success, data, error) {
           requestId: requestId,
           success: false,
           error: error,
-        },
+        }
   );
 }
 
@@ -799,8 +1763,8 @@ figma.ui.onmessage = async (msg) => {
       message.indexOf("not found") !== -1
         ? "NODE_NOT_FOUND"
         : message.indexOf("font") !== -1
-          ? "FONT_UNAVAILABLE"
-          : "EXECUTION_ERROR";
+        ? "FONT_UNAVAILABLE"
+        : "EXECUTION_ERROR";
     sendResponse(requestId, false, undefined, { code: code, message: message });
   }
 };

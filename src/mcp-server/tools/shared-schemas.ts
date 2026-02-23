@@ -85,3 +85,86 @@ export const AutoLayoutAlign = z.enum([
   "MAX",
   "SPACE_BETWEEN",
 ]);
+
+// ─── Phase 1: Extended Style Schemas ─────────────────────────────────────────
+
+export const GradientAngularFill = z
+  .object({
+    type: z.enum(["GRADIENT_ANGULAR", "GRADIENT_DIAMOND"]),
+    gradientStops: z.array(GradientStop).min(2).max(20),
+  })
+  .strict();
+
+export const ExtendedFill = z.discriminatedUnion("type", [
+  SolidFill,
+  GradientFill,
+  GradientAngularFill,
+]);
+
+export const DashPattern = z
+  .array(z.number().min(0))
+  .max(20)
+  .describe("Alternating dash and gap lengths, e.g. [8, 4] for 8px dash 4px gap");
+
+export const StrokeCap = z.enum([
+  "NONE",
+  "ROUND",
+  "SQUARE",
+  "ARROW_LINES",
+  "ARROW_EQUILATERAL",
+]);
+
+export const StrokeJoin = z.enum(["MITER", "BEVEL", "ROUND"]);
+
+export const DropShadowEffect = z
+  .object({
+    type: z.literal("DROP_SHADOW"),
+    color: RGBAColor.default({ r: 0, g: 0, b: 0, a: 0.25 }),
+    offsetX: z.number().min(-1000).max(1000).default(0),
+    offsetY: z.number().min(-1000).max(1000).default(4),
+    blur: z.number().min(0).max(1000).default(8),
+    spread: z.number().min(-1000).max(1000).default(0),
+    visible: z.boolean().default(true),
+    blendMode: z.string().default("NORMAL"),
+  })
+  .strict();
+
+export const InnerShadowEffect = z
+  .object({
+    type: z.literal("INNER_SHADOW"),
+    color: RGBAColor.default({ r: 0, g: 0, b: 0, a: 0.25 }),
+    offsetX: z.number().min(-1000).max(1000).default(0),
+    offsetY: z.number().min(-1000).max(1000).default(4),
+    blur: z.number().min(0).max(1000).default(8),
+    spread: z.number().min(-1000).max(1000).default(0),
+    visible: z.boolean().default(true),
+    blendMode: z.string().default("NORMAL"),
+  })
+  .strict();
+
+export const LayerBlurEffect = z
+  .object({
+    type: z.literal("LAYER_BLUR"),
+    radius: z.number().min(0).max(1000).default(4),
+    visible: z.boolean().default(true),
+  })
+  .strict();
+
+export const BackgroundBlurEffect = z
+  .object({
+    type: z.literal("BACKGROUND_BLUR"),
+    radius: z.number().min(0).max(1000).default(8),
+    visible: z.boolean().default(true),
+  })
+  .strict();
+
+export const Effect = z.discriminatedUnion("type", [
+  DropShadowEffect,
+  InnerShadowEffect,
+  LayerBlurEffect,
+  BackgroundBlurEffect,
+]);
+
+export const LayoutSizing = z.enum(["FIXED", "HUG", "FILL"]);
+
+export const LayoutAlign = z.enum(["INHERIT", "STRETCH"]);

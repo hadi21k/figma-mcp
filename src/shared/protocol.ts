@@ -8,6 +8,9 @@ export type ErrorCode =
   | "TIMEOUT"
   | "EXECUTION_ERROR"
   | "FONT_UNAVAILABLE"
+  | "COMPONENT_NOT_FOUND"
+  | "STYLE_NOT_FOUND"
+  | "IMAGE_TOO_LARGE"
   | "INTERNAL_ERROR";
 
 // ─── Wire Message Types ──────────────────────────────────────────────────────
