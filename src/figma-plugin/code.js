@@ -1254,12 +1254,28 @@ async function handleExportNode(args) {
   let base64Data;
   if (typeof Buffer !== "undefined") {
     base64Data = Buffer.from(bytes).toString("base64");
-  } else {
+  } else if (typeof btoa === "function") {
+    // btoa is available (standard browser environment)
     let binary = "";
     for (let i = 0; i < bytes.length; i++) {
       binary += String.fromCharCode(bytes[i]);
     }
     base64Data = btoa(binary);
+  } else {
+    // Pure-JS base64 encoder — works in Figma's QuickJS sandbox where btoa is not available
+    var B64_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    var out = [];
+    var len = bytes.length;
+    for (var i = 0; i < len; i += 3) {
+      var b0 = bytes[i];
+      var b1 = i + 1 < len ? bytes[i + 1] : 0;
+      var b2 = i + 2 < len ? bytes[i + 2] : 0;
+      out.push(B64_CHARS[b0 >> 2]);
+      out.push(B64_CHARS[((b0 & 3) << 4) | (b1 >> 4)]);
+      out.push(i + 1 < len ? B64_CHARS[((b1 & 15) << 2) | (b2 >> 6)] : "=");
+      out.push(i + 2 < len ? B64_CHARS[b2 & 63] : "=");
+    }
+    base64Data = out.join("");
   }
 
   return {
