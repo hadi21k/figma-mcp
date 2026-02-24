@@ -100,7 +100,7 @@ export const REQUEST_ID_PATTERN = /^req_\d+_[a-z0-9]+$/;
 export const DEFAULT_WS_HOST = "127.0.0.1";
 export const DEFAULT_WS_PORT = 9001;
 export const DEFAULT_TIMEOUT_MS = 30_000;
-export const MAX_MESSAGE_BYTES = 1_048_576; // 1 MB (increased for image data)
+export const MAX_MESSAGE_BYTES = 8_388_608; // 8 MB — supports high-res image fills
 
 // ─── Logging ─────────────────────────────────────────────────────────────────
 

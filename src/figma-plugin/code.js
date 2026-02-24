@@ -1257,15 +1257,40 @@ async function handleSetImageFill(args) {
   const nodeId = assertString(args.nodeId, "nodeId");
   const imageData = assertBase64(args.imageData, "imageData");
   const scaleMode = assertString(nvl(args.scaleMode, "FILL"), "scaleMode");
+  const preserveFills = args.preserveFills === true;
+  const opacity = typeof args.opacity === "number" ? args.opacity : 1;
   const node = findNode(nodeId);
   if (!("fills" in node))
     throw new Error(`Node ${nodeId} does not support fills`);
 
   const bytes = base64Decode(imageData);
   const image = figma.createImage(bytes);
-  node.fills = [{ type: "IMAGE", scaleMode: scaleMode, imageHash: image.hash }];
 
-  return { nodeId: node.id, imageHash: image.hash, scaleMode: scaleMode };
+  var paint = { type: "IMAGE", scaleMode: scaleMode, imageHash: image.hash, opacity: opacity };
+
+  // Compute imageTransform from focal point + zoom when using FILL or CROP
+  if ((scaleMode === "FILL" || scaleMode === "CROP") &&
+      (args.focalPointX != null || args.focalPointY != null || args.zoom != null)) {
+    var fx = typeof args.focalPointX === "number" ? args.focalPointX : 0.5;
+    var fy = typeof args.focalPointY === "number" ? args.focalPointY : 0.5;
+    var z = typeof args.zoom === "number" ? args.zoom : 1;
+
+    // imageTransform is a 2x3 affine matrix [[scaleX, shearX, translateX], [shearY, scaleY, translateY]]
+    // Scale = 1/zoom (zoom in = smaller scale = shows less of image)
+    // Translate = focal point offset adjusted for scale
+    var s = 1 / z;
+    var tx = fx - (fx * s);
+    var ty = fy - (fy * s);
+    paint.imageTransform = [[s, 0, tx], [0, s, ty]];
+  }
+
+  if (preserveFills && Array.isArray(node.fills)) {
+    node.fills = [...node.fills, paint];
+  } else {
+    node.fills = [paint];
+  }
+
+  return { nodeId: node.id, imageHash: image.hash, scaleMode: scaleMode, opacity: opacity, preserveFills: preserveFills };
 }
 
 // ─── Phase 2: Export ──────────────────────────────────────────────────────────

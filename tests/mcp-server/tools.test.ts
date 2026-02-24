@@ -1004,6 +1004,107 @@ describe("SetImageFillInput", () => {
   it("rejects invalid scaleMode", () => {
     expect(() => SetImageFillInput.parse({ nodeId: "1:1", imageData: "data", scaleMode: "STRETCH" })).toThrow();
   });
+
+  it("accepts focalPointX and focalPointY", () => {
+    const result = SetImageFillInput.parse({
+      nodeId: "1:1",
+      imageData: "data",
+      focalPointX: 0.75,
+      focalPointY: 0.25,
+    });
+    expect(result.focalPointX).toBe(0.75);
+    expect(result.focalPointY).toBe(0.25);
+  });
+
+  it("defaults focalPointX and focalPointY to undefined", () => {
+    const result = SetImageFillInput.parse({
+      nodeId: "1:1",
+      imageData: "data",
+    });
+    expect(result.focalPointX).toBeUndefined();
+    expect(result.focalPointY).toBeUndefined();
+  });
+
+  it("rejects focalPointX out of range", () => {
+    expect(() => SetImageFillInput.parse({ nodeId: "1:1", imageData: "data", focalPointX: 1.5 })).toThrow();
+    expect(() => SetImageFillInput.parse({ nodeId: "1:1", imageData: "data", focalPointX: -0.1 })).toThrow();
+  });
+
+  it("rejects focalPointY out of range", () => {
+    expect(() => SetImageFillInput.parse({ nodeId: "1:1", imageData: "data", focalPointY: 2 })).toThrow();
+    expect(() => SetImageFillInput.parse({ nodeId: "1:1", imageData: "data", focalPointY: -1 })).toThrow();
+  });
+
+  it("accepts zoom parameter", () => {
+    const result = SetImageFillInput.parse({
+      nodeId: "1:1",
+      imageData: "data",
+      zoom: 2.5,
+    });
+    expect(result.zoom).toBe(2.5);
+  });
+
+  it("rejects zoom out of range", () => {
+    expect(() => SetImageFillInput.parse({ nodeId: "1:1", imageData: "data", zoom: 0 })).toThrow();
+    expect(() => SetImageFillInput.parse({ nodeId: "1:1", imageData: "data", zoom: 11 })).toThrow();
+  });
+
+  it("accepts preserveFills flag", () => {
+    const result = SetImageFillInput.parse({
+      nodeId: "1:1",
+      imageData: "data",
+      preserveFills: true,
+    });
+    expect(result.preserveFills).toBe(true);
+  });
+
+  it("defaults preserveFills to false", () => {
+    const result = SetImageFillInput.parse({
+      nodeId: "1:1",
+      imageData: "data",
+    });
+    expect(result.preserveFills).toBe(false);
+  });
+
+  it("accepts opacity parameter", () => {
+    const result = SetImageFillInput.parse({
+      nodeId: "1:1",
+      imageData: "data",
+      opacity: 0.5,
+    });
+    expect(result.opacity).toBe(0.5);
+  });
+
+  it("defaults opacity to 1", () => {
+    const result = SetImageFillInput.parse({
+      nodeId: "1:1",
+      imageData: "data",
+    });
+    expect(result.opacity).toBe(1);
+  });
+
+  it("rejects opacity out of range", () => {
+    expect(() => SetImageFillInput.parse({ nodeId: "1:1", imageData: "data", opacity: 1.5 })).toThrow();
+    expect(() => SetImageFillInput.parse({ nodeId: "1:1", imageData: "data", opacity: -0.1 })).toThrow();
+  });
+
+  it("accepts all new params together", () => {
+    const result = SetImageFillInput.parse({
+      nodeId: "1:1",
+      imageData: "data",
+      scaleMode: "CROP",
+      focalPointX: 0.8,
+      focalPointY: 0.2,
+      zoom: 3,
+      preserveFills: true,
+      opacity: 0.7,
+    });
+    expect(result.focalPointX).toBe(0.8);
+    expect(result.focalPointY).toBe(0.2);
+    expect(result.zoom).toBe(3);
+    expect(result.preserveFills).toBe(true);
+    expect(result.opacity).toBe(0.7);
+  });
 });
 
 describe("SetImageFromUrlInput", () => {
@@ -1048,6 +1149,39 @@ describe("SetImageFromUrlInput", () => {
       SetImageFromUrlInput.parse({ nodeId: "1:1", url: "https://example.com/img.png", extra: true }),
     ).toThrow();
   });
+
+  it("accepts focal point and zoom params", () => {
+    const result = SetImageFromUrlInput.parse({
+      nodeId: "1:1",
+      url: "https://example.com/img.png",
+      focalPointX: 0,
+      focalPointY: 1,
+      zoom: 5,
+    });
+    expect(result.focalPointX).toBe(0);
+    expect(result.focalPointY).toBe(1);
+    expect(result.zoom).toBe(5);
+  });
+
+  it("accepts preserveFills and opacity", () => {
+    const result = SetImageFromUrlInput.parse({
+      nodeId: "1:1",
+      url: "https://example.com/img.png",
+      preserveFills: true,
+      opacity: 0.3,
+    });
+    expect(result.preserveFills).toBe(true);
+    expect(result.opacity).toBe(0.3);
+  });
+
+  it("defaults preserveFills to false and opacity to 1", () => {
+    const result = SetImageFromUrlInput.parse({
+      nodeId: "1:1",
+      url: "https://example.com/img.png",
+    });
+    expect(result.preserveFills).toBe(false);
+    expect(result.opacity).toBe(1);
+  });
 });
 
 describe("SetImageFromPathInput", () => {
@@ -1086,6 +1220,57 @@ describe("SetImageFromPathInput", () => {
   it("rejects extra properties", () => {
     expect(() =>
       SetImageFromPathInput.parse({ nodeId: "1:1", filePath: "/tmp/img.png", extra: true }),
+    ).toThrow();
+  });
+
+  it("accepts focal point, zoom, preserveFills, and opacity", () => {
+    const result = SetImageFromPathInput.parse({
+      nodeId: "1:1",
+      filePath: "/tmp/img.png",
+      scaleMode: "FILL",
+      focalPointX: 0.5,
+      focalPointY: 0.5,
+      zoom: 1.5,
+      preserveFills: true,
+      opacity: 0.8,
+    });
+    expect(result.focalPointX).toBe(0.5);
+    expect(result.focalPointY).toBe(0.5);
+    expect(result.zoom).toBe(1.5);
+    expect(result.preserveFills).toBe(true);
+    expect(result.opacity).toBe(0.8);
+  });
+
+  it("defaults preserveFills to false and opacity to 1", () => {
+    const result = SetImageFromPathInput.parse({
+      nodeId: "1:1",
+      filePath: "/tmp/img.png",
+    });
+    expect(result.preserveFills).toBe(false);
+    expect(result.opacity).toBe(1);
+  });
+
+  it("rejects focalPointX out of range", () => {
+    expect(() =>
+      SetImageFromPathInput.parse({ nodeId: "1:1", filePath: "/tmp/img.png", focalPointX: 1.1 }),
+    ).toThrow();
+  });
+
+  it("rejects zoom out of range", () => {
+    expect(() =>
+      SetImageFromPathInput.parse({ nodeId: "1:1", filePath: "/tmp/img.png", zoom: 0 }),
+    ).toThrow();
+    expect(() =>
+      SetImageFromPathInput.parse({ nodeId: "1:1", filePath: "/tmp/img.png", zoom: 11 }),
+    ).toThrow();
+  });
+
+  it("rejects opacity out of range", () => {
+    expect(() =>
+      SetImageFromPathInput.parse({ nodeId: "1:1", filePath: "/tmp/img.png", opacity: -0.5 }),
+    ).toThrow();
+    expect(() =>
+      SetImageFromPathInput.parse({ nodeId: "1:1", filePath: "/tmp/img.png", opacity: 1.1 }),
     ).toThrow();
   });
 });

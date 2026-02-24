@@ -3,6 +3,7 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { fileURLToPath } from "url";
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from "fs";
 import { join, resolve, extname } from "path";
+import sharp from "sharp";
 import { TOOL_REGISTRY } from "./tools/index.js";
 import { generateRequestId } from "./request-tracker.js";
 import { connectWebSocket, sendCommand, tracker } from "./ws-client.js";
@@ -10,7 +11,8 @@ import { createLogger, MetricsCollector } from "../shared/logger/index.js";
 import type { Logger } from "pino";
 
 const IMAGE_FETCH_TIMEOUT_MS = 30_000;
-const MAX_IMAGE_BYTES = 750_000;
+const MAX_IMAGE_BYTES = 5_242_880; // 5 MB — allows high-res images
+const OPTIMIZE_TARGET_BYTES = 4_800_000; // target size after optimization (some headroom)
 const ALLOWED_IMAGE_CONTENT_TYPES = [
   "image/png",
   "image/jpeg",
@@ -50,14 +52,14 @@ for (const [name, def] of Object.entries(TOOL_REGISTRY)) {
 
         // ── Server-side image helpers (never sent to the plugin as-is) ──────
         if (name === "set_image_from_url") {
-          const res = await handleSetImageFromUrl(args as { nodeId: string; url: string; scaleMode?: string }, reqLog);
+          const res = await handleSetImageFromUrl(args as unknown as ImageArgs & { url: string }, reqLog);
           const durationMs = Math.round(performance.now() - startTime);
           metrics.recordCommand(name, durationMs);
           reqLog.info({ durationMs }, "tool completed");
           return res;
         }
         if (name === "set_image_from_path") {
-          const res = await handleSetImageFromPath(args as { nodeId: string; filePath: string; scaleMode?: string }, reqLog);
+          const res = await handleSetImageFromPath(args as unknown as ImageArgs & { filePath: string }, reqLog);
           const durationMs = Math.round(performance.now() - startTime);
           metrics.recordCommand(name, durationMs);
           reqLog.info({ durationMs }, "tool completed");
@@ -100,13 +102,63 @@ for (const [name, def] of Object.entries(TOOL_REGISTRY)) {
   );
 }
 
+// ─── Image args shared type ──────────────────────────────────────────────────
+
+interface ImageArgs {
+  nodeId: string;
+  scaleMode?: string;
+  focalPointX?: number;
+  focalPointY?: number;
+  zoom?: number;
+  preserveFills?: boolean;
+  opacity?: number;
+}
+
+// ─── Auto-optimization ───────────────────────────────────────────────────────
+
+async function optimizeImage(input: Uint8Array, reqLog: Logger): Promise<Buffer> {
+  const meta = await sharp(input).metadata();
+  reqLog.info(
+    { originalBytes: input.length, width: meta.width, height: meta.height, format: meta.format },
+    "optimizing oversized image",
+  );
+
+  const width = meta.width ?? 2400;
+  let result: Buffer = Buffer.from(input);
+
+  for (const scale of [0.75, 0.5, 0.35, 0.25]) {
+    const targetWidth = Math.round(width * scale);
+    result = Buffer.from(
+      await sharp(input)
+        .resize({ width: targetWidth, withoutEnlargement: true })
+        .jpeg({ quality: 85 })
+        .toBuffer(),
+    );
+
+    reqLog.debug({ targetWidth, resultBytes: result.length }, "resize attempt");
+    if (result.length <= OPTIMIZE_TARGET_BYTES) break;
+  }
+
+  if (result.length > MAX_IMAGE_BYTES) {
+    throw new Error(
+      `Image could not be optimized below ${(MAX_IMAGE_BYTES / 1024).toFixed(0)}KB (best: ${(result.length / 1024).toFixed(0)}KB). Use a smaller source image.`,
+    );
+  }
+
+  reqLog.info(
+    { originalBytes: input.length, optimizedBytes: result.length },
+    "image optimized successfully",
+  );
+  return result;
+}
+
 // ─── set_image_from_url ───────────────────────────────────────────────────────
 
 async function handleSetImageFromUrl(
-  args: { nodeId: string; url: string; scaleMode?: string },
+  args: ImageArgs & { url: string },
   reqLog: Logger,
 ) {
-  const { nodeId, url, scaleMode = "FILL" } = args;
+  const { nodeId, url, scaleMode = "FILL", focalPointX, focalPointY, zoom, preserveFills, opacity } = args;
   reqLog.info({ url }, "fetching image from URL");
 
   const controller = new AbortController();
@@ -133,17 +185,17 @@ async function handleSetImageFromUrl(
     throw new Error(`URL returned unsupported Content-Type "${contentType}". Expected an image (PNG, JPG, GIF, WEBP, SVG).`);
   }
 
-  const buffer = Buffer.from(await response.arrayBuffer());
+  let buffer: Buffer = Buffer.from(await response.arrayBuffer());
   if (buffer.length > MAX_IMAGE_BYTES) {
-    throw new Error(
-      `Image is ${(buffer.length / 1024).toFixed(0)}KB which exceeds the ${(MAX_IMAGE_BYTES / 1024).toFixed(0)}KB limit. Resize the image or use a smaller one.`,
-    );
+    buffer = await optimizeImage(buffer, reqLog);
   }
 
   const imageData = buffer.toString("base64");
   reqLog.info({ bytes: buffer.length, nodeId }, "image fetched, applying fill");
 
-  const result = await sendCommand("set_image_fill", { nodeId, imageData, scaleMode });
+  const result = await sendCommand("set_image_fill", {
+    nodeId, imageData, scaleMode, focalPointX, focalPointY, zoom, preserveFills, opacity,
+  });
   return {
     content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }],
   };
@@ -152,10 +204,10 @@ async function handleSetImageFromUrl(
 // ─── set_image_from_path ─────────────────────────────────────────────────────
 
 async function handleSetImageFromPath(
-  args: { nodeId: string; filePath: string; scaleMode?: string },
+  args: ImageArgs & { filePath: string },
   reqLog: Logger,
 ) {
-  const { nodeId, filePath, scaleMode = "FILL" } = args;
+  const { nodeId, filePath, scaleMode = "FILL", focalPointX, focalPointY, zoom, preserveFills, opacity } = args;
   reqLog.info({ filePath }, "reading image from disk");
 
   const ext = extname(filePath).toLowerCase();
@@ -167,17 +219,17 @@ async function handleSetImageFromPath(
     throw new Error(`File not found: ${filePath}`);
   }
 
-  const buffer = readFileSync(filePath);
+  let buffer: Buffer = readFileSync(filePath) as Buffer;
   if (buffer.length > MAX_IMAGE_BYTES) {
-    throw new Error(
-      `Image is ${(buffer.length / 1024).toFixed(0)}KB which exceeds the ${(MAX_IMAGE_BYTES / 1024).toFixed(0)}KB limit. Resize the image or use a smaller one.`,
-    );
+    buffer = await optimizeImage(buffer, reqLog);
   }
 
   const imageData = buffer.toString("base64");
   reqLog.info({ bytes: buffer.length, nodeId }, "image read, applying fill");
 
-  const result = await sendCommand("set_image_fill", { nodeId, imageData, scaleMode });
+  const result = await sendCommand("set_image_fill", {
+    nodeId, imageData, scaleMode, focalPointX, focalPointY, zoom, preserveFills, opacity,
+  });
   return {
     content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }],
   };
