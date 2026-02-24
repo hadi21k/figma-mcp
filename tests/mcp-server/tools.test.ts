@@ -43,6 +43,8 @@ import {
   ApplyStyleInput,
   // Image tools
   SetImageFillInput,
+  SetImageFromUrlInput,
+  SetImageFromPathInput,
   // Export tools
   ExportNodeInput,
   // Typography tools
@@ -100,9 +102,9 @@ import {
 // ─── Tool Registry Tests ─────────────────────────────────────────────────────
 
 describe("Tool Registry", () => {
-  it("contains all 64 tools", () => {
+  it("contains all 66 tools", () => {
     const tools = Object.keys(TOOL_REGISTRY);
-    expect(tools).toHaveLength(64);
+    expect(tools).toHaveLength(66);
   });
 
   const expectedTools = [
@@ -126,7 +128,7 @@ describe("Tool Registry", () => {
     // Phase 2: Style system
     "create_paint_style", "create_text_style", "get_local_styles", "apply_style",
     // Phase 2: Image
-    "set_image_fill",
+    "set_image_fill", "set_image_from_url", "set_image_from_path",
     // Phase 2: Export
     "export_node",
     // Phase 2: Typography
@@ -1001,6 +1003,90 @@ describe("SetImageFillInput", () => {
 
   it("rejects invalid scaleMode", () => {
     expect(() => SetImageFillInput.parse({ nodeId: "1:1", imageData: "data", scaleMode: "STRETCH" })).toThrow();
+  });
+});
+
+describe("SetImageFromUrlInput", () => {
+  it("accepts valid URL with default scaleMode", () => {
+    const result = SetImageFromUrlInput.parse({
+      nodeId: "1:1",
+      url: "https://example.com/photo.png",
+    });
+    expect(result.scaleMode).toBe("FILL");
+    expect(result.url).toBe("https://example.com/photo.png");
+  });
+
+  it("accepts URL with explicit scaleMode", () => {
+    const result = SetImageFromUrlInput.parse({
+      nodeId: "1:1",
+      url: "https://cdn.example.com/img.jpg",
+      scaleMode: "FIT",
+    });
+    expect(result.scaleMode).toBe("FIT");
+  });
+
+  it("rejects missing url", () => {
+    expect(() => SetImageFromUrlInput.parse({ nodeId: "1:1" })).toThrow();
+  });
+
+  it("rejects invalid url", () => {
+    expect(() => SetImageFromUrlInput.parse({ nodeId: "1:1", url: "not-a-url" })).toThrow();
+  });
+
+  it("rejects empty url", () => {
+    expect(() => SetImageFromUrlInput.parse({ nodeId: "1:1", url: "" })).toThrow();
+  });
+
+  it("rejects invalid scaleMode", () => {
+    expect(() =>
+      SetImageFromUrlInput.parse({ nodeId: "1:1", url: "https://example.com/img.png", scaleMode: "STRETCH" }),
+    ).toThrow();
+  });
+
+  it("rejects extra properties", () => {
+    expect(() =>
+      SetImageFromUrlInput.parse({ nodeId: "1:1", url: "https://example.com/img.png", extra: true }),
+    ).toThrow();
+  });
+});
+
+describe("SetImageFromPathInput", () => {
+  it("accepts valid file path with default scaleMode", () => {
+    const result = SetImageFromPathInput.parse({
+      nodeId: "1:1",
+      filePath: "/Users/me/photo.png",
+    });
+    expect(result.scaleMode).toBe("FILL");
+    expect(result.filePath).toBe("/Users/me/photo.png");
+  });
+
+  it("accepts file path with explicit scaleMode", () => {
+    const result = SetImageFromPathInput.parse({
+      nodeId: "1:1",
+      filePath: "C:\\Users\\me\\image.jpg",
+      scaleMode: "CROP",
+    });
+    expect(result.scaleMode).toBe("CROP");
+  });
+
+  it("rejects missing filePath", () => {
+    expect(() => SetImageFromPathInput.parse({ nodeId: "1:1" })).toThrow();
+  });
+
+  it("rejects empty filePath", () => {
+    expect(() => SetImageFromPathInput.parse({ nodeId: "1:1", filePath: "" })).toThrow();
+  });
+
+  it("rejects invalid scaleMode", () => {
+    expect(() =>
+      SetImageFromPathInput.parse({ nodeId: "1:1", filePath: "/tmp/img.png", scaleMode: "STRETCH" }),
+    ).toThrow();
+  });
+
+  it("rejects extra properties", () => {
+    expect(() =>
+      SetImageFromPathInput.parse({ nodeId: "1:1", filePath: "/tmp/img.png", extra: true }),
+    ).toThrow();
   });
 });
 

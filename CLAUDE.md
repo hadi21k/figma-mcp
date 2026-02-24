@@ -23,7 +23,7 @@ Three processes connected in a chain:
 Claude ←stdio→ MCP Server ←WebSocket→ Bridge (127.0.0.1:9001) ←WebSocket→ Figma Plugin
 ```
 
-**MCP Server** (`src/mcp-server/index.ts`): Uses `McpServer` from `@modelcontextprotocol/sdk/server/mcp.js`. Tool registration loops over `TOOL_REGISTRY` from `tools/index.ts`. WebSocket client logic lives in `ws-client.ts`. On tool call, sends a COMMAND over WebSocket and awaits a RESPONSE matched by `requestId`.
+**MCP Server** (`src/mcp-server/index.ts`): Uses `McpServer` from `@modelcontextprotocol/sdk/server/mcp.js`. Tool registration loops over `TOOL_REGISTRY` from `tools/index.ts`. WebSocket client logic lives in `ws-client.ts`. On tool call, sends a COMMAND over WebSocket and awaits a RESPONSE matched by `requestId`. Some tools are **server-side only** (intercepted before `sendCommand`) — see "Server-side Tools" below.
 
 **WebSocket Bridge** (`src/websocket-server/index.ts`): Accepts exactly two client roles — MCP client (identified by `?role=mcp-client` query param) and Figma plugin (identified by sending REGISTER as first message). Config in `config.ts`, validation in `validation.ts`. Routes COMMANDs from MCP→plugin and RESPONSEs from plugin→MCP.
 
@@ -59,7 +59,7 @@ src/
 │       ├── layout-tools.ts          set_node_layout_properties
 │       ├── component-tools.ts       create_component_instance, get_local_components, list_available_fonts
 │       ├── style-system-tools.ts    create_paint_style, create_text_style, get_local_styles, apply_style
-│       ├── image-tools.ts           set_image_fill
+│       ├── image-tools.ts           set_image_fill, set_image_from_url, set_image_from_path
 │       ├── export-tools.ts          export_node
 │       ├── typography-tools.ts      set_text_decoration, set_text_case, set_text_list
 │       ├── constraint-tools.ts      set_constraints, set_layout_grids
@@ -100,13 +100,32 @@ Three message types: `REGISTER` (plugin→bridge on connect), `COMMAND` (MCP→b
 - Plugin auto-reconnects with exponential backoff (1s base, 2x multiplier, 30s max, random jitter).
 - **Structured logging** via [pino](https://github.com/pinojs/pino). All Node.js logs go to stderr (fd=2) to avoid corrupting MCP's JSON-RPC on stdout. Plugin uses a lightweight `pluginLog()` helper (no pino — Figma sandbox has no Node.js).
 
+## Server-side Tools
+
+Some tools are intercepted in `src/mcp-server/index.ts` **before** `sendCommand` and never reach the plugin. They preprocess inputs and forward to an existing plugin command internally.
+
+| Tool | What it does | Forwards to |
+|---|---|---|
+| `set_image_from_url` | Fetches an image from a public URL (Node.js `fetch`), encodes to base64 | `set_image_fill` |
+| `set_image_from_path` | Reads a local file by absolute path (`readFileSync`), encodes to base64 | `set_image_fill` |
+
+These tools do **not** need entries in `COMMAND_NAMES` or plugin allowlists — the plugin only ever sees the forwarded `set_image_fill` command.
+
+`export_node` results are also post-processed in `index.ts`: the base64 image is auto-saved to `./exports/` (or `FIGMA_EXPORT_DIR`) and returned as an MCP `image` content block so Claude can see it directly. The Figma plugin itself base64-encodes exports using a pure-JS fallback encoder (Figma's QuickJS sandbox has no `btoa` or `Buffer`).
+
 ## Adding a New Tool
 
-When adding a new tool, update all three locations:
+**Plugin-backed tool** (most tools — runs logic in Figma): update all four locations:
 1. `src/shared/constants.ts` — add to `COMMAND_NAMES` array
 2. `src/mcp-server/tools/` — add schema in appropriate category file + add to partial registry
 3. `src/figma-plugin/code.js` — add to `ALLOWED_COMMANDS` Set + add handler
 4. `src/figma-plugin/ui.html` — add to `ALLOWED_COMMANDS` array
+
+**Server-side tool** (runs entirely in Node.js, no plugin involvement): update only two locations:
+1. `src/mcp-server/tools/` — add schema in appropriate category file + add to partial registry
+2. `src/mcp-server/index.ts` — intercept by `name` before `sendCommand`, handle and return result
+
+Do **not** add server-side tools to `COMMAND_NAMES` or the plugin allowlists.
 
 ## TypeScript Config
 
@@ -176,7 +195,7 @@ The bridge logs its full metrics snapshot on shutdown (SIGINT/SIGTERM).
 
 Tests use vitest. Coverage includes `src/shared/**`, `src/mcp-server/**`, and `src/websocket-server/**` (plugin excluded — it requires Figma runtime). `ws-client.ts` and `index.ts` in mcp-server are excluded from coverage (they require live connections). `LOG_LEVEL=silent` is set in vitest config to suppress log output.
 
-- `tests/mcp-server/tools.test.ts` — Zod schema validation for all 64 tools (valid/invalid inputs)
+- `tests/mcp-server/tools.test.ts` — Zod schema validation for all tools (valid/invalid inputs); includes `set_image_from_url` and `set_image_from_path`
 - `tests/mcp-server/request-tracker.test.ts` — Timeout, resolve, reject, rejectAll
 - `tests/websocket-server/bridge.test.ts` — Bridge routing, validation, client management, disconnect handling
 - `tests/integration/roundtrip.test.ts` — Full MCP→bridge→mock-plugin→bridge→MCP round-trips

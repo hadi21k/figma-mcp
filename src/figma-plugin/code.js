@@ -143,6 +143,14 @@ function assertString(val, name) {
   return val;
 }
 
+// For image data — no length cap (images can be hundreds of KB as base64)
+function assertBase64(val, name) {
+  if (typeof val !== "string" || val.length === 0) {
+    throw new Error(`${name} must be a non-empty string`);
+  }
+  return val;
+}
+
 function assertNumber(val, name, min, max) {
   if (typeof val !== "number" || isNaN(val)) {
     throw new Error(`${name} must be a number`);
@@ -1216,21 +1224,44 @@ async function handleApplyStyle(args) {
 
 // ─── Phase 2: Images ─────────────────────────────────────────────────────────
 
+// Pure-JS base64 decoder — works in Figma's QuickJS sandbox where atob is unavailable
+function base64Decode(b64) {
+  if (typeof atob === "function") {
+    var raw = atob(b64);
+    var out = new Uint8Array(raw.length);
+    for (var i = 0; i < raw.length; i++) out[i] = raw.charCodeAt(i);
+    return out;
+  }
+  var B64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+  var lookup = {};
+  for (var c = 0; c < B64.length; c++) lookup[B64[c]] = c;
+  var clean = b64.replace(/[^A-Za-z0-9+/]/g, "");
+  var len = clean.length;
+  var padding = b64.endsWith("==") ? 2 : b64.endsWith("=") ? 1 : 0;
+  var byteLen = (len * 3) / 4 - padding;
+  var bytes = new Uint8Array(byteLen);
+  var p = 0;
+  for (var j = 0; j < len; j += 4) {
+    var a0 = lookup[clean[j]] || 0;
+    var a1 = lookup[clean[j + 1]] || 0;
+    var a2 = lookup[clean[j + 2]] || 0;
+    var a3 = lookup[clean[j + 3]] || 0;
+    bytes[p++] = (a0 << 2) | (a1 >> 4);
+    if (p < byteLen) bytes[p++] = ((a1 & 15) << 4) | (a2 >> 2);
+    if (p < byteLen) bytes[p++] = ((a2 & 3) << 6) | a3;
+  }
+  return bytes;
+}
+
 async function handleSetImageFill(args) {
   const nodeId = assertString(args.nodeId, "nodeId");
-  const imageData = assertString(args.imageData, "imageData");
+  const imageData = assertBase64(args.imageData, "imageData");
   const scaleMode = assertString(nvl(args.scaleMode, "FILL"), "scaleMode");
   const node = findNode(nodeId);
   if (!("fills" in node))
     throw new Error(`Node ${nodeId} does not support fills`);
 
-  // Decode base64 to Uint8Array
-  const binaryStr = atob(imageData);
-  const bytes = new Uint8Array(binaryStr.length);
-  for (let i = 0; i < binaryStr.length; i++) {
-    bytes[i] = binaryStr.charCodeAt(i);
-  }
-
+  const bytes = base64Decode(imageData);
   const image = figma.createImage(bytes);
   node.fills = [{ type: "IMAGE", scaleMode: scaleMode, imageHash: image.hash }];
 

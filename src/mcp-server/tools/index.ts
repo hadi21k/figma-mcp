@@ -136,7 +136,11 @@ export {
   ApplyStyleInput,
 } from "./style-system-tools.js";
 
-export { SetImageFillInput } from "./image-tools.js";
+export {
+  SetImageFillInput,
+  SetImageFromUrlInput,
+  SetImageFromPathInput,
+} from "./image-tools.js";
 
 export { ExportNodeInput } from "./export-tools.js";
 
