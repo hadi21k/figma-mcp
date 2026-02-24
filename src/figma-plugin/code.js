@@ -148,7 +148,7 @@ function assertBase64(val, name) {
   if (typeof val !== "string" || val.length === 0) {
     throw new Error(`${name} must be a non-empty string`);
   }
-  if (val.length > 8_000_000) {
+  if (val.length > 8000000) {
     throw new Error(`${name} exceeds maximum base64 length (8MB)`);
   }
   return val;
