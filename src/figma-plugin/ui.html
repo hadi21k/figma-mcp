@@ -246,6 +246,12 @@
             }
             if (ALLOWED_COMMANDS.indexOf(msg.command) === -1) {
               log("Rejected: unknown command " + msg.command, "warn");
+              ws.send(JSON.stringify({
+                type: "RESPONSE",
+                requestId: msg.requestId,
+                success: false,
+                error: { code: "COMMAND_NOT_FOUND", message: "Unknown command: " + msg.command }
+              }));
               return;
             }
             log("CMD: " + msg.command + " [" + msg.requestId + "]", "info");

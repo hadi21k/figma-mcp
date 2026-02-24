@@ -1,7 +1,8 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { fileURLToPath } from "url";
-import { readFileSync, writeFileSync, mkdirSync, existsSync } from "fs";
+import { readFile, writeFile, mkdir } from "fs/promises";
+import { writeFileSync, mkdirSync } from "fs";
 import { join, resolve, extname } from "path";
 import sharp from "sharp";
 import { TOOL_REGISTRY } from "./tools/index.js";
@@ -11,6 +12,25 @@ import { createLogger, MetricsCollector } from "../shared/logger/index.js";
 import type { Logger } from "pino";
 
 const IMAGE_FETCH_TIMEOUT_MS = 30_000;
+
+// ─── SSRF protection ────────────────────────────────────────────────────────
+
+const PRIVATE_IP_PATTERNS = [
+  /^127\./, /^10\./, /^172\.(1[6-9]|2\d|3[01])\./, /^192\.168\./,
+  /^169\.254\./, /^0\./, /^::1$/, /^fc00:/, /^fe80:/, /^fd/,
+];
+
+function assertPublicUrl(raw: string): URL {
+  const parsed = new URL(raw);
+  if (!["http:", "https:"].includes(parsed.protocol)) {
+    throw new Error("Only http and https URLs are allowed");
+  }
+  const hostname = parsed.hostname.replace(/^\[|\]$/g, "");
+  if (hostname === "localhost" || PRIVATE_IP_PATTERNS.some((re) => re.test(hostname))) {
+    throw new Error("URLs pointing to private or internal networks are not allowed");
+  }
+  return parsed;
+}
 const MAX_IMAGE_BYTES = 5_242_880; // 5 MB — allows high-res images
 const OPTIMIZE_TARGET_BYTES = 4_800_000; // target size after optimization (some headroom)
 const ALLOWED_IMAGE_CONTENT_TYPES = [
@@ -159,6 +179,7 @@ async function handleSetImageFromUrl(
   reqLog: Logger,
 ) {
   const { nodeId, url, scaleMode = "FILL", focalPointX, focalPointY, zoom, preserveFills, opacity } = args;
+  assertPublicUrl(url);
   reqLog.info({ url }, "fetching image from URL");
 
   const controller = new AbortController();
@@ -166,18 +187,18 @@ async function handleSetImageFromUrl(
 
   let response: Response;
   try {
-    response = await fetch(url, { signal: controller.signal });
+    response = await fetch(url, { signal: controller.signal, redirect: "error" });
   } catch (err) {
     if ((err as Error).name === "AbortError") {
-      throw new Error(`Image fetch timed out after ${IMAGE_FETCH_TIMEOUT_MS}ms: ${url}`);
+      throw new Error("Image fetch timed out");
     }
-    throw new Error(`Failed to fetch image: ${(err as Error).message}`);
+    throw new Error("Failed to fetch image from the provided URL");
   } finally {
     clearTimeout(timeout);
   }
 
   if (!response.ok) {
-    throw new Error(`Failed to fetch image (HTTP ${response.status}): ${url}`);
+    throw new Error(`Failed to fetch image (HTTP ${response.status})`);
   }
 
   const contentType = response.headers.get("content-type")?.split(";")[0]?.trim() ?? "";
@@ -212,14 +233,24 @@ async function handleSetImageFromPath(
 
   const ext = extname(filePath).toLowerCase();
   if (!ALLOWED_IMAGE_EXTENSIONS.has(ext)) {
-    throw new Error(`Unsupported file extension "${ext}". Allowed: ${[...ALLOWED_IMAGE_EXTENSIONS].join(", ")}`);
+    throw new Error("Unsupported file extension. Allowed: " + [...ALLOWED_IMAGE_EXTENSIONS].join(", "));
   }
 
-  if (!existsSync(filePath)) {
-    throw new Error(`File not found: ${filePath}`);
+  const resolvedPath = resolve(filePath);
+  const allowedRoot = process.env.FIGMA_IMAGE_ROOT;
+  if (allowedRoot) {
+    const resolvedRoot = resolve(allowedRoot);
+    if (!resolvedPath.startsWith(resolvedRoot + "/") && !resolvedPath.startsWith(resolvedRoot + "\\") && resolvedPath !== resolvedRoot) {
+      throw new Error("File path is outside the allowed image directory");
+    }
   }
 
-  let buffer: Buffer = readFileSync(filePath) as Buffer;
+  let buffer: Buffer;
+  try {
+    buffer = Buffer.from(await readFile(resolvedPath));
+  } catch {
+    throw new Error("The specified image file could not be found or read");
+  }
   if (buffer.length > MAX_IMAGE_BYTES) {
     buffer = await optimizeImage(buffer, reqLog);
   }
@@ -261,8 +292,13 @@ function handleExportResult(result: ExportResult, reqLog: Logger) {
     const exportDir = resolve(process.env.FIGMA_EXPORT_DIR ?? "./exports");
     mkdirSync(exportDir, { recursive: true });
     const ext = result.format.toLowerCase();
-    const filename = `${result.nodeId.replace(":", "-")}_${Date.now()}.${ext}`;
+    const safeId = result.nodeId.replace(/[^a-zA-Z0-9_-]/g, "_");
+    const filename = `${safeId}_${Date.now()}.${ext}`;
     savedTo = join(exportDir, filename);
+    const resolvedExport = resolve(savedTo);
+    if (!resolvedExport.startsWith(resolve(exportDir))) {
+      throw new Error("Export path escapes export directory");
+    }
     writeFileSync(savedTo, Buffer.from(result.base64Data, "base64"));
     reqLog.info({ savedTo }, "export saved to disk");
   } catch (saveErr) {
@@ -305,11 +341,35 @@ async function main(): Promise<void> {
   log.info("figma mcp server started (stdio)");
 }
 
+process.on("unhandledRejection", (reason) => {
+  log.fatal({ reason }, "unhandled rejection — shutting down");
+  process.exit(1);
+});
+
+process.on("uncaughtException", (err) => {
+  log.fatal({ err }, "uncaught exception — shutting down");
+  process.exit(1);
+});
+
 const isDirectRun = process.argv[1] === fileURLToPath(import.meta.url);
 if (isDirectRun) {
   main().catch((err) => {
     log.fatal({ err }, "fatal error");
     process.exit(1);
+  });
+
+  process.on("SIGINT", () => {
+    log.info("shutting down (SIGINT)");
+    log.info({ metrics: metrics.snapshot() }, "final metrics snapshot");
+    tracker.rejectAll(new Error("Server shutting down"));
+    process.exit(0);
+  });
+
+  process.on("SIGTERM", () => {
+    log.info("shutting down (SIGTERM)");
+    log.info({ metrics: metrics.snapshot() }, "final metrics snapshot");
+    tracker.rejectAll(new Error("Server shutting down"));
+    process.exit(0);
   });
 }
 

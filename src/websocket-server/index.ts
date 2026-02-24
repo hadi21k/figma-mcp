@@ -55,6 +55,8 @@ export class FigmaBridge {
     return this.metrics.snapshot();
   }
 
+  private cleanupInterval: ReturnType<typeof setInterval> | null = null;
+
   start(): Promise<void> {
     return new Promise((resolve, reject) => {
       try {
@@ -73,6 +75,8 @@ export class FigmaBridge {
             { host: this.config.host, port: this.config.port },
             "bridge listening",
           );
+          this.startCleanupInterval();
+          this.startPingInterval();
           resolve();
         });
 
@@ -86,8 +90,37 @@ export class FigmaBridge {
     });
   }
 
+  private pingInterval: ReturnType<typeof setInterval> | null = null;
+  private requestTimestamps = new Map<string, number>();
+
+  private startCleanupInterval(): void {
+    this.cleanupInterval = setInterval(() => {
+      const now = Date.now();
+      const staleThreshold = this.config.timeoutMs + 5000;
+      for (const [requestId, ts] of this.requestTimestamps) {
+        if (now - ts > staleThreshold) {
+          this.requestToClient.delete(requestId);
+          this.requestTimestamps.delete(requestId);
+        }
+      }
+    }, 60_000);
+  }
+
+  private startPingInterval(): void {
+    this.pingInterval = setInterval(() => {
+      for (const client of this.mcpClients) {
+        if (client.readyState === WebSocket.OPEN) client.ping();
+      }
+      if (this.pluginClient?.readyState === WebSocket.OPEN) {
+        this.pluginClient.ping();
+      }
+    }, 30_000);
+  }
+
   stop(): Promise<void> {
     return new Promise((resolve) => {
+      if (this.cleanupInterval) { clearInterval(this.cleanupInterval); this.cleanupInterval = null; }
+      if (this.pingInterval) { clearInterval(this.pingInterval); this.pingInterval = null; }
       for (const client of this.mcpClients) {
         client.close(1000, "Bridge shutting down");
       }
@@ -112,6 +145,23 @@ export class FigmaBridge {
       req.url ?? "/",
       `http://${req.headers.host ?? "localhost"}`,
     );
+
+    if (this.config.bridgeToken) {
+      const token = url.searchParams.get("token");
+      if (token !== this.config.bridgeToken) {
+        this.log.warn("connection rejected — invalid or missing token");
+        ws.close(4000, "Unauthorized");
+        return;
+      }
+    }
+
+    const origin = req.headers.origin;
+    if (origin && origin !== "null") {
+      this.log.warn({ origin }, "connection rejected — browser origin not allowed");
+      ws.close(4000, "Origin not allowed");
+      return;
+    }
+
     const role = url.searchParams.get("role");
 
     if (role === "mcp-client") {
@@ -122,6 +172,11 @@ export class FigmaBridge {
   }
 
   private handleMcpClient(ws: WebSocket): void {
+    if (this.mcpClients.size >= this.config.maxMcpClients) {
+      this.log.warn("mcp client rejected — max clients reached");
+      ws.close(4429, "Too many MCP clients");
+      return;
+    }
     this.mcpClients.add(ws);
     this.log.info({ mcpClients: this.mcpClients.size }, "mcp client connected");
     this.metrics.recordConnection("mcpConnects");
@@ -252,6 +307,7 @@ export class FigmaBridge {
 
     reqLog.debug({ command: cmdMsg.command }, "routing command to plugin");
     this.requestToClient.set(msg.requestId, sender);
+    this.requestTimestamps.set(msg.requestId, Date.now());
     this.pluginClient.send(raw);
   }
 
@@ -277,6 +333,7 @@ export class FigmaBridge {
 
     const sender = this.requestToClient.get(msg.requestId);
     this.requestToClient.delete(msg.requestId);
+    this.requestTimestamps.delete(msg.requestId);
     this.metrics.recordMessageOut();
 
     if (sender && sender.readyState === WebSocket.OPEN) {
@@ -305,6 +362,7 @@ export class FigmaBridge {
       }
     }
     this.requestToClient.clear();
+    this.requestTimestamps.clear();
   }
 
   get isReady(): boolean {
@@ -335,12 +393,12 @@ if (isMainModule) {
 
   bridge
     .start()
+    .then(() => {
+      log.info("server running, press Ctrl+C to stop");
+    })
     .catch((err) => {
       log.fatal({ err }, "failed to start");
       process.exit(1);
-    })
-    .then(() => {
-      log.info("server running, press Ctrl+C to stop");
     });
 
   process.on("SIGINT", async () => {

@@ -4,14 +4,26 @@ import { createLogger } from "../shared/logger/index.js";
 
 // ─── Logging ─────────────────────────────────────────────────────────────────
 
-const log = createLogger({ component: "mcp" });
+const log = createLogger({ component: "mcp-ws" });
 
 // ─── Configuration ───────────────────────────────────────────────────────────
 
-const WS_URL = process.env.WS_URL ?? "ws://127.0.0.1:9001?role=mcp-client";
+function buildWsUrl(): string {
+  const base = process.env.WS_URL ?? "ws://127.0.0.1:9001?role=mcp-client";
+  const token = process.env.BRIDGE_TOKEN;
+  if (!token) return base;
+  const sep = base.includes("?") ? "&" : "?";
+  return `${base}${sep}token=${encodeURIComponent(token)}`;
+}
+
+const WS_URL = buildWsUrl();
 const _timeoutRaw = parseInt(process.env.WS_TIMEOUT_MS ?? "30000", 10);
 const WS_TIMEOUT_MS = Number.isNaN(_timeoutRaw) ? 30000 : _timeoutRaw;
-const WS_RECONNECT_INTERVAL_MS = 3000;
+
+const RECONNECT_BASE_MS = 1000;
+const RECONNECT_MAX_MS = 30_000;
+const RECONNECT_MULTIPLIER = 2;
+let reconnectAttempt = 0;
 
 // ─── Request Tracker ─────────────────────────────────────────────────────────
 
@@ -42,6 +54,7 @@ export function connectWebSocket(): void {
 
   socket.on("open", () => {
     log.info({ url: WS_URL }, "connected to bridge");
+    reconnectAttempt = 0;
     if (reconnectTimer) {
       clearTimeout(reconnectTimer);
       reconnectTimer = null;
@@ -60,7 +73,7 @@ export function connectWebSocket(): void {
           msg.data !== null
         ) {
           tracker.resolve(msg.requestId, msg.data as Record<string, unknown>);
-        } else if (
+        } else       if (
           msg.success === false &&
           typeof msg.error === "object" &&
           msg.error !== null
@@ -72,6 +85,8 @@ export function connectWebSocket(): void {
               `[${errObj.code ?? "UNKNOWN"}] ${errObj.message ?? "Unknown error"}`,
             ),
           );
+        } else {
+          log.warn({ requestId: msg.requestId, success: msg.success }, "malformed RESPONSE — missing data or error");
         }
       }
     } catch (err) {
@@ -93,10 +108,15 @@ export function connectWebSocket(): void {
 
 function scheduleReconnect(): void {
   if (reconnectTimer) return;
+  const delay = Math.min(
+    RECONNECT_BASE_MS * Math.pow(RECONNECT_MULTIPLIER, reconnectAttempt) + Math.random() * 1000,
+    RECONNECT_MAX_MS,
+  );
+  reconnectAttempt++;
   reconnectTimer = setTimeout(() => {
     reconnectTimer = null;
     connectWebSocket();
-  }, WS_RECONNECT_INTERVAL_MS);
+  }, delay);
 }
 
 export async function sendCommand(

@@ -48,8 +48,9 @@ export const SetImageFillInput = z
     imageData: z
       .string()
       .min(1)
+      .max(7_500_000)
       .describe(
-        "Base64-encoded image bytes (PNG, JPG, GIF, SVG, or WEBP). Images over 5MB are auto-optimized.",
+        "Base64-encoded image bytes (PNG, JPG, GIF, SVG, or WEBP). Max ~5.5MB raw. Images over 5MB are auto-optimized.",
       ),
     scaleMode: ScaleMode,
     focalPointX: FocalPointX,
@@ -66,7 +67,11 @@ export const SetImageFromUrlInput = z
     url: z
       .string()
       .url()
-      .describe("Public image URL (PNG, JPG, GIF, WEBP). The server fetches, auto-optimizes if needed, and applies it."),
+      .refine(
+        (u) => /^https?:\/\//i.test(u),
+        { message: "Only http:// and https:// URLs are allowed" },
+      )
+      .describe("Public image URL (PNG, JPG, GIF, WEBP). Only http/https allowed. The server fetches, auto-optimizes if needed, and applies it."),
     scaleMode: ScaleMode,
     focalPointX: FocalPointX,
     focalPointY: FocalPointY,
@@ -82,6 +87,11 @@ export const SetImageFromPathInput = z
     filePath: z
       .string()
       .min(1)
+      .max(1024)
+      .refine(
+        (p) => !p.includes(".."),
+        { message: "Path must not contain '..' segments" },
+      )
       .describe("Absolute path to a local image file (PNG, JPG, GIF, WEBP). The server reads, auto-optimizes if needed, and applies it."),
     scaleMode: ScaleMode,
     focalPointX: FocalPointX,

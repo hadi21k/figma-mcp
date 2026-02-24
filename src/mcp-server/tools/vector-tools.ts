@@ -12,8 +12,9 @@ export const CreateVectorInput = z
             data: z
               .string()
               .min(1)
+              .max(100_000)
               .describe(
-                "SVG path data string (the 'd' attribute), e.g. 'M 0 0 L 100 0 L 100 100 Z'",
+                "SVG path data string (the 'd' attribute), e.g. 'M 0 0 L 100 0 L 100 100 Z'. Max 100KB.",
               ),
             windingRule: z
               .enum(["EVENODD", "NONZERO"])

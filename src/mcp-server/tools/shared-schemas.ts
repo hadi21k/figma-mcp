@@ -6,7 +6,15 @@ export const NodeId = z
   .string()
   .min(1)
   .max(100)
+  .regex(/^[\w:]+$/, "Must be a valid Figma node ID (e.g. '123:456')")
   .describe("Figma node ID, e.g. '123:456'");
+
+export const BlendMode = z.enum([
+  "NORMAL", "DARKEN", "MULTIPLY", "COLOR_BURN",
+  "LIGHTEN", "SCREEN", "COLOR_DODGE", "OVERLAY",
+  "SOFT_LIGHT", "HARD_LIGHT", "DIFFERENCE", "EXCLUSION",
+  "HUE", "SATURATION", "COLOR", "LUMINOSITY",
+]);
 
 export const RGBAColor = z
   .object({
@@ -102,7 +110,7 @@ export const ExtendedFill = z.discriminatedUnion("type", [
 ]);
 
 export const DashPattern = z
-  .array(z.number().min(0))
+  .array(z.number().min(0).max(10000))
   .max(20)
   .describe("Alternating dash and gap lengths, e.g. [8, 4] for 8px dash 4px gap");
 
@@ -125,7 +133,7 @@ export const DropShadowEffect = z
     blur: z.number().min(0).max(1000).default(8),
     spread: z.number().min(-1000).max(1000).default(0),
     visible: z.boolean().default(true),
-    blendMode: z.string().default("NORMAL"),
+    blendMode: BlendMode.default("NORMAL"),
   })
   .strict();
 
@@ -138,7 +146,7 @@ export const InnerShadowEffect = z
     blur: z.number().min(0).max(1000).default(8),
     spread: z.number().min(-1000).max(1000).default(0),
     visible: z.boolean().default(true),
-    blendMode: z.string().default("NORMAL"),
+    blendMode: BlendMode.default("NORMAL"),
   })
   .strict();
 

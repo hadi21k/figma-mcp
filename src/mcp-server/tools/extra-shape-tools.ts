@@ -33,7 +33,11 @@ export const CreateSvgNodeInput = z
       .string()
       .min(1)
       .max(65536)
-      .describe("SVG markup string (max 64KB). Must be valid SVG."),
+      .refine(
+        (s) => !/<script[\s>]/i.test(s) && !/on\w+\s*=/i.test(s),
+        { message: "SVG must not contain <script> tags or event handlers" },
+      )
+      .describe("SVG markup string (max 64KB). Must be valid SVG. No scripts or event handlers allowed."),
     x: z.number().min(-100000).max(100000).default(0),
     y: z.number().min(-100000).max(100000).default(0),
     name: z.string().max(500).optional().describe("Name for the created node"),

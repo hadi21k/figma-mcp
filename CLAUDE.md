@@ -96,7 +96,7 @@ Three message types: `REGISTER` (plugin→bridge on connect), `COMMAND` (MCP→b
 - **COMMAND_NAMES** in `src/shared/constants.ts` is the single source of truth for all 64 commands. Plugin files (`code.js`, `ui.html`) maintain their own allowlists for defense-in-depth but reference `constants.ts` via comments.
 - Tool schemas are defined in `src/mcp-server/tools/` using Zod with `.strict()`. Each category file exports a partial registry, merged in `tools/index.ts`.
 - `McpServer.registerTool()` handles Zod→JSON Schema conversion and input validation internally.
-- Bridge binds to `127.0.0.1` only (no network exposure). Max message size: 1MB.
+- Bridge binds to `127.0.0.1` only (no network exposure). Max message size: 8MB (supports high-res image fills).
 - Plugin auto-reconnects with exponential backoff (1s base, 2x multiplier, 30s max, random jitter).
 - **Structured logging** via [pino](https://github.com/pinojs/pino). All Node.js logs go to stderr (fd=2) to avoid corrupting MCP's JSON-RPC on stdout. Plugin uses a lightweight `pluginLog()` helper (no pino — Figma sandbox has no Node.js).
 

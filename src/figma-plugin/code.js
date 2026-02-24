@@ -148,6 +148,9 @@ function assertBase64(val, name) {
   if (typeof val !== "string" || val.length === 0) {
     throw new Error(`${name} must be a non-empty string`);
   }
+  if (val.length > 8_000_000) {
+    throw new Error(`${name} exceeds maximum base64 length (8MB)`);
+  }
   return val;
 }
 
@@ -612,7 +615,9 @@ async function handleUpdateText(args) {
   if (node.type !== "TEXT")
     throw new Error(`Node ${nodeId} is not a TEXT node`);
 
-  const fontName = node.fontName;
+  const fontName = node.fontName === figma.mixed
+    ? { family: "Inter", style: "Regular" }
+    : node.fontName;
   await figma.loadFontAsync(fontName);
 
   if (content !== undefined) node.characters = content;
@@ -760,6 +765,11 @@ async function handleGroupNodes(args) {
   const name = assertString(nvl(args.name, "Group"), "name");
   const nodes = args.nodeIds.map((id) => findNode(assertString(id, "nodeId")));
   const parent = nvl(nodes[0].parent, figma.currentPage);
+  for (let i = 1; i < nodes.length; i++) {
+    if (nodes[i].parent !== parent) {
+      throw new Error("All nodes must share the same parent to be grouped");
+    }
+  }
   const group = figma.group(nodes, parent);
   group.name = name;
 
@@ -928,8 +938,11 @@ async function handleSetStroke(args) {
     node.strokeWeight = assertNumber(args.strokeWeight, "strokeWeight", 0, 100);
   if (args.strokeAlign !== undefined)
     node.strokeAlign = assertString(args.strokeAlign, "strokeAlign");
-  if (args.dashPattern !== undefined && Array.isArray(args.dashPattern))
-    node.dashPattern = args.dashPattern;
+  if (args.dashPattern !== undefined && Array.isArray(args.dashPattern)) {
+    node.dashPattern = args.dashPattern.map(function (v, i) {
+      return assertNumber(v, "dashPattern[" + i + "]", 0, 10000);
+    });
+  }
   if (args.strokeCap !== undefined)
     node.strokeCap = assertString(args.strokeCap, "strokeCap");
   if (args.strokeJoin !== undefined)
@@ -981,6 +994,7 @@ async function handleSetEffects(args) {
     throw new Error(`Node ${nodeId} does not support effects`);
 
   if (!Array.isArray(args.effects)) throw new Error("effects must be an array");
+  if (args.effects.length > 20) throw new Error("effects exceeds maximum of 20");
 
   node.effects = args.effects.map(function (e, i) {
     const t = e.type;
@@ -1415,6 +1429,7 @@ async function handleSetLayoutGrids(args) {
   if (node.type !== "FRAME" && node.type !== "COMPONENT")
     throw new Error("Layout grids can only be set on frames or components");
   if (!Array.isArray(args.grids)) throw new Error("grids must be an array");
+  if (args.grids.length > 10) throw new Error("grids exceeds maximum of 10");
 
   node.layoutGrids = args.grids.map(function (g, i) {
     return {
@@ -1454,14 +1469,22 @@ async function handleSetLayoutGrids(args) {
 
 // ─── Phase 3: Batch Operations ────────────────────────────────────────────────
 
+const BATCH_BLOCKED_COMMANDS = new Set(["batch_create", "batch_update"]);
+
 async function handleBatchCreate(args) {
   if (!Array.isArray(args.operations))
     throw new Error("operations must be an array");
+  if (args.operations.length > 100)
+    throw new Error("operations exceeds maximum of 100");
   const results = [];
 
   for (let i = 0; i < args.operations.length; i++) {
     const op = args.operations[i];
     try {
+      if (!isAllowedCommand(op.command))
+        throw new Error("Unknown or disallowed command: " + op.command);
+      if (BATCH_BLOCKED_COMMANDS.has(op.command))
+        throw new Error("Recursive batch operations are not allowed");
       const handler = handlers[op.command];
       if (!handler) throw new Error("Unknown command: " + op.command);
       const result = await handler(op.args || {});
@@ -1485,6 +1508,7 @@ async function handleBatchCreate(args) {
 
 async function handleBatchUpdate(args) {
   if (!Array.isArray(args.updates)) throw new Error("updates must be an array");
+  if (args.updates.length > 100) throw new Error("updates exceeds maximum of 100");
   const results = [];
 
   for (let i = 0; i < args.updates.length; i++) {
@@ -1628,16 +1652,18 @@ async function handleFindNodes(args) {
   if (!("findAll" in root))
     throw new Error("Root node does not support findAll");
 
-  const found = root.findAll(function (node) {
+  const found = [];
+  root.findAll(function (node) {
+    if (found.length >= maxResults) return false;
     const typeMatch = !types || types.includes(node.type);
     const nameMatch = !namePattern || node.name.indexOf(namePattern) !== -1;
-    return typeMatch && nameMatch;
+    if (typeMatch && nameMatch) found.push(node);
+    return false;
   });
 
-  const limited = found.slice(0, maxResults);
   return {
     count: found.length,
-    nodes: limited.map(function (n) {
+    nodes: found.map(function (n) {
       return { id: n.id, name: n.name, type: n.type };
     }),
   };
@@ -1870,7 +1896,8 @@ async function handleLockNode(args) {
 async function handleCreateStar(args) {
   const name = assertString(nvl(args.name, "Star"), "name");
   const pointCount = assertNumber(nvl(args.pointCount, 5), "pointCount", 3, 20);
-  const innerRadius = assertNumber(nvl(args.innerRadius, 0.382), "innerRadius", 0.01, 0.99);
+  const DEFAULT_STAR_INNER_RADIUS = 0.382; // (3 - sqrt(5)) / 2 — golden ratio
+  const innerRadius = assertNumber(nvl(args.innerRadius, DEFAULT_STAR_INNER_RADIUS), "innerRadius", 0.01, 0.99);
   const width = assertNumber(nvl(args.width, 100), "width", 1, 100000);
   const height = assertNumber(nvl(args.height, 100), "height", 1, 100000);
   const x = assertNumber(nvl(args.x, 0), "x", -100000, 100000);
@@ -1914,7 +1941,7 @@ async function handleNotify(args) {
   const message = assertString(args.message, "message");
   const isError = !!args.error;
   const timeout = assertNumber(nvl(args.timeout, 4000), "timeout", 1000, 30000);
-  figma.notify(message, { error: isError, timeout: timeout });
+  figma.notify("[MCP] " + message, { error: isError, timeout: timeout });
   return { message: message, error: isError, timeout: timeout };
 }
 

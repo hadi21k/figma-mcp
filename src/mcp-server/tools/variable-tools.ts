@@ -1,6 +1,13 @@
 import { z } from "zod";
-import { NodeId } from "./shared-schemas.js";
+import { NodeId, RGBAColor } from "./shared-schemas.js";
 import type { ToolDefinition } from "./index.js";
+
+const VariableValue = z.union([
+  RGBAColor,
+  z.number().min(-1e6).max(1e6),
+  z.string().max(10_000),
+  z.boolean(),
+]);
 
 export const CreateVariableCollectionInput = z
   .object({
@@ -32,7 +39,7 @@ export const CreateVariableInput = z
       .enum(["COLOR", "FLOAT", "STRING", "BOOLEAN"])
       .describe("Variable type"),
     values: z
-      .record(z.string(), z.unknown())
+      .record(z.string().max(200), VariableValue)
       .optional()
       .describe(
         "Values per mode, keyed by mode ID. e.g. { 'modeId1': { r:1,g:0,b:0,a:1 } }",

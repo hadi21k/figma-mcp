@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { NodeId } from "./shared-schemas.js";
+import { NodeId, BlendMode } from "./shared-schemas.js";
 import type { ToolDefinition } from "./index.js";
 
 export const SetRotationInput = z
@@ -16,26 +16,7 @@ export const SetRotationInput = z
 export const SetBlendModeInput = z
   .object({
     nodeId: NodeId,
-    blendMode: z
-      .enum([
-        "NORMAL",
-        "DARKEN",
-        "MULTIPLY",
-        "COLOR_BURN",
-        "LIGHTEN",
-        "SCREEN",
-        "COLOR_DODGE",
-        "OVERLAY",
-        "SOFT_LIGHT",
-        "HARD_LIGHT",
-        "DIFFERENCE",
-        "EXCLUSION",
-        "HUE",
-        "SATURATION",
-        "COLOR",
-        "LUMINOSITY",
-      ])
-      .describe("Blend mode for layer compositing"),
+    blendMode: BlendMode.describe("Blend mode for layer compositing"),
   })
   .strict();
 

@@ -43,6 +43,7 @@ export const BatchUpdateInput = z
             visible: z.boolean().optional(),
             name: z.string().max(500).optional(),
             fills: z.array(Fill).max(20).optional(),
+            cornerRadius: z.number().min(0).max(10000).optional(),
           })
           .strict(),
       )

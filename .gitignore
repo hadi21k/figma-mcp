@@ -2,5 +2,15 @@ node_modules/
 dist/
 coverage/
 logs/
+!logs/.gitkeep
+exports/
+!exports/.gitkeep
 .env
+.env.*
+!.env.example
 *.tsbuildinfo
+*.pem
+*.key
+*.cert
+*.p12
+*.pfx

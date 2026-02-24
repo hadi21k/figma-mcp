@@ -5,7 +5,7 @@ import type { Logger } from "../shared/logger/index.js";
 let requestCounter = 0;
 
 export function generateRequestId(): string {
-  requestCounter += 1;
+  requestCounter = (requestCounter + 1) % Number.MAX_SAFE_INTEGER;
   const suffix = Math.random().toString(36).substring(2, 8);
   return `req_${requestCounter}_${suffix}`;
 }
@@ -33,7 +33,12 @@ export class RequestTracker {
     this.logger = logger;
   }
 
+  private static readonly MAX_PENDING = 100;
+
   add(requestId: string): Promise<Record<string, unknown>> {
+    if (this.pending.size >= RequestTracker.MAX_PENDING) {
+      return Promise.reject(new Error("Too many pending requests. Try again later."));
+    }
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
         this.pending.delete(requestId);
