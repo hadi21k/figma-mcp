@@ -1,3 +1,5 @@
+import type { Logger } from "../shared/logger/index.js";
+
 // ─── Request ID Generation ───────────────────────────────────────────────────
 
 let requestCounter = 0;
@@ -24,15 +26,21 @@ interface PendingRequest {
 export class RequestTracker {
   private pending = new Map<string, PendingRequest>();
   private timeoutMs: number;
+  private logger?: Logger;
 
-  constructor(timeoutMs: number = 30000) {
+  constructor(timeoutMs: number = 30000, logger?: Logger) {
     this.timeoutMs = timeoutMs;
+    this.logger = logger;
   }
 
   add(requestId: string): Promise<Record<string, unknown>> {
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
         this.pending.delete(requestId);
+        this.logger?.warn(
+          { requestId, timeoutMs: this.timeoutMs },
+          "request timed out",
+        );
         reject(
           new Error(
             `Timeout: no response for ${requestId} within ${this.timeoutMs}ms`,

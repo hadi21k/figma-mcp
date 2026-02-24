@@ -1,5 +1,10 @@
 import { WebSocket } from "ws";
 import { RequestTracker, generateRequestId } from "./request-tracker.js";
+import { createLogger } from "../shared/logger/index.js";
+
+// ─── Logging ─────────────────────────────────────────────────────────────────
+
+const log = createLogger({ component: "mcp" });
 
 // ─── Configuration ───────────────────────────────────────────────────────────
 
@@ -10,7 +15,7 @@ const WS_RECONNECT_INTERVAL_MS = 3000;
 
 // ─── Request Tracker ─────────────────────────────────────────────────────────
 
-export const tracker = new RequestTracker(WS_TIMEOUT_MS);
+export const tracker = new RequestTracker(WS_TIMEOUT_MS, log);
 
 // ─── WebSocket Client ────────────────────────────────────────────────────────
 
@@ -28,20 +33,22 @@ export function connectWebSocket(): void {
   try {
     ws = new WebSocket(WS_URL);
   } catch {
-    console.error("[mcp] Failed to create WebSocket connection");
+    log.error("failed to create websocket connection");
     scheduleReconnect();
     return;
   }
 
-  ws.on("open", () => {
-    console.error("[mcp] Connected to bridge");
+  const socket = ws;
+
+  socket.on("open", () => {
+    log.info({ url: WS_URL }, "connected to bridge");
     if (reconnectTimer) {
       clearTimeout(reconnectTimer);
       reconnectTimer = null;
     }
   });
 
-  ws.on("message", (data) => {
+  socket.on("message", (data) => {
     const raw = data.toString();
     try {
       const msg = JSON.parse(raw) as Record<string, unknown>;
@@ -68,19 +75,19 @@ export function connectWebSocket(): void {
         }
       }
     } catch (err) {
-      console.error("[mcp] Failed to parse bridge message:", err);
+      log.error({ err }, "failed to parse bridge message");
     }
   });
 
-  ws.on("close", () => {
-    console.error("[mcp] Disconnected from bridge");
-    ws = null;
+  socket.on("close", (code: number, reason: Buffer) => {
+    if (ws === socket) ws = null;
     tracker.rejectAll(new Error("Bridge connection lost"));
+    log.warn({ code, reason: reason.toString() }, "disconnected from bridge");
     scheduleReconnect();
   });
 
-  ws.on("error", (err) => {
-    console.error("[mcp] WebSocket error:", err.message);
+  socket.on("error", (err) => {
+    log.error({ err }, "websocket error");
   });
 }
 
@@ -103,6 +110,7 @@ export async function sendCommand(
   }
 
   const requestId = generateRequestId();
+  const reqLog = log.child({ requestId, command });
   const message = {
     type: "COMMAND",
     requestId,
@@ -110,6 +118,7 @@ export async function sendCommand(
     args,
   };
 
+  reqLog.debug("sending command to bridge");
   const responsePromise = tracker.add(requestId);
   ws.send(JSON.stringify(message));
   return responsePromise;

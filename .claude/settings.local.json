@@ -19,7 +19,15 @@
       "mcp__figma-mcp__zoom_to_node",
       "mcp__figma-mcp__delete_node",
       "Bash(npm run test:coverage:*)",
-      "mcp__figma-mcp__get_document_info"
+      "mcp__figma-mcp__get_document_info",
+      "mcp__figma-mcp__list_available_fonts",
+      "Bash(cd:*)",
+      "mcp__figma-mcp__create_page",
+      "mcp__figma-mcp__set_auto_layout",
+      "mcp__figma-mcp__set_fill",
+      "mcp__figma-mcp__batch_create",
+      "Bash(netstat:*)",
+      "Bash(grep:*)"
     ]
   }
 }

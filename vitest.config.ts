@@ -5,6 +5,9 @@ export default defineConfig({
     globals: true,
     environment: "node",
     include: ["tests/**/*.test.ts"],
+    env: {
+      LOG_LEVEL: "silent",
+    },
     coverage: {
       provider: "v8",
       include: ["src/shared/**", "src/mcp-server/**", "src/websocket-server/**"],
@@ -14,6 +17,8 @@ export default defineConfig({
         "src/mcp-server/index.ts",
         // Excluded because it manages live WebSocket connections
         "src/mcp-server/ws-client.ts",
+        // Excluded because pino transport setup requires live pino-pretty module
+        "src/shared/logger/logger.ts",
       ],
       thresholds: {
         lines: 80,

@@ -120,9 +120,14 @@
     var logEl = document.getElementById("log");
     var urlInput = document.getElementById("urlInput");
 
-    function log(msg) {
+    function log(msg, level) {
+      level = level || "info";
       var line = document.createElement("div");
-      line.textContent = new Date().toLocaleTimeString() + " " + msg;
+      var prefix = new Date().toLocaleTimeString() + " [" + level + "] ";
+      line.textContent = prefix + msg;
+      if (level === "error") line.style.color = "#e74c3c";
+      else if (level === "warn") line.style.color = "#f1c40f";
+      else if (level === "debug") line.style.color = "#95a5a6";
       logEl.appendChild(line);
       logEl.scrollTop = logEl.scrollHeight;
       while (logEl.children.length > 50) {
@@ -152,19 +157,19 @@
       if (!BRIDGE_URL) return;
 
       setStatus("connecting");
-      log("Connecting to " + BRIDGE_URL + "...");
+      log("Connecting to " + BRIDGE_URL + "...", "info");
 
       try {
         ws = new WebSocket(BRIDGE_URL);
       } catch (e) {
-        log("Failed to create WebSocket: " + e.message);
+        log("Failed to create WebSocket: " + e.message, "error");
         setStatus("disconnected");
         scheduleReconnect();
         return;
       }
 
       ws.onopen = function () {
-        log("Connected to bridge");
+        log("Connected to bridge", "info");
         setStatus("connected");
         reconnectDelay = RECONNECT_BASE_MS;
 
@@ -176,7 +181,7 @@
           pluginVersion: "1.0.0"
         };
         ws.send(JSON.stringify(registerMsg));
-        log("Sent REGISTER");
+        log("Sent REGISTER", "debug");
       };
 
       // ALLOWED_COMMANDS source of truth: src/shared/constants.ts → COMMAND_NAMES
@@ -218,7 +223,16 @@
         // Phase 3: Traversal
         "find_nodes",
         // Phase 3: Variables
-        "create_variable_collection", "create_variable", "bind_variable"
+        "create_variable_collection", "create_variable", "bind_variable",
+        // Phase 4: Workflow
+        "flatten_node", "ungroup_nodes", "set_selection", "set_current_page",
+        "create_effect_style", "get_variables",
+        // Phase 5: Design system
+        "combine_as_variants", "detach_instance", "swap_component", "import_component_by_key",
+        // Phase 6: Manipulation
+        "set_rotation", "set_blend_mode", "lock_node",
+        // Phase 6: Extra shapes
+        "create_star", "create_svg_node", "notify"
       ];
       var REQ_ID_RE = /^req_\d+_[a-z0-9]+$/;
 
@@ -227,30 +241,30 @@
           var msg = JSON.parse(event.data);
           if (msg.type === "COMMAND") {
             if (!REQ_ID_RE.test(msg.requestId)) {
-              log("Rejected: invalid requestId");
+              log("Rejected: invalid requestId", "warn");
               return;
             }
             if (ALLOWED_COMMANDS.indexOf(msg.command) === -1) {
-              log("Rejected: unknown command " + msg.command);
+              log("Rejected: unknown command " + msg.command, "warn");
               return;
             }
-            log("CMD: " + msg.command + " [" + msg.requestId + "]");
+            log("CMD: " + msg.command + " [" + msg.requestId + "]", "info");
             parent.postMessage({ pluginMessage: msg }, "*");
           }
         } catch (e) {
-          log("Parse error: " + e.message);
+          log("Parse error: " + e.message, "error");
         }
       };
 
       ws.onclose = function (event) {
-        log("Disconnected: " + event.code + " " + (event.reason || ""));
+        log("Disconnected: " + event.code + " " + (event.reason || ""), "warn");
         setStatus("disconnected");
         ws = null;
         scheduleReconnect();
       };
 
       ws.onerror = function () {
-        log("WebSocket error");
+        log("WebSocket error", "error");
       };
     }
 
@@ -260,7 +274,7 @@
       var jitter = Math.random() * 500;
       var delay = Math.min(reconnectDelay + jitter, RECONNECT_MAX_MS);
 
-      log("Reconnecting in " + Math.round(delay) + "ms");
+      log("Reconnecting in " + Math.round(delay) + "ms", "debug");
       reconnectTimer = setTimeout(function () {
         reconnectTimer = null;
         reconnectDelay = Math.min(reconnectDelay * RECONNECT_MULTIPLIER, RECONNECT_MAX_MS);
@@ -294,7 +308,7 @@
       // RESPONSE from plugin sandbox — forward to bridge
       if (msg.type === "RESPONSE" && ws && ws.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify(msg));
-        log("RSP: " + (msg.success ? "OK" : "ERR") + " [" + msg.requestId + "]");
+        log("RSP: " + (msg.success ? "OK" : "ERR") + " [" + msg.requestId + "]", msg.success ? "info" : "warn");
       }
     };
 
@@ -302,7 +316,7 @@
     document.getElementById("saveBtn").addEventListener("click", function () {
       var newUrl = urlInput.value.trim();
       if (!newUrl) return;
-      log("Saving URL: " + newUrl);
+      log("Saving URL: " + newUrl, "info");
       parent.postMessage({ pluginMessage: { type: "SAVE_SETTINGS", bridgeUrl: newUrl } }, "*");
     });
   </script>

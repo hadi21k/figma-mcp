@@ -3,15 +3,20 @@ import { IncomingMessage } from "http";
 import { URL, fileURLToPath } from "url";
 import { BridgeConfig, loadConfig } from "./config.js";
 import { ProtocolError, parseAndValidate } from "./validation.js";
+import { createLogger, MetricsCollector } from "../shared/logger/index.js";
+import type { Logger } from "../shared/logger/index.js";
+import type { MetricsSnapshot } from "../shared/logger/index.js";
 import type {
   RegisterMessage,
+  CommandMessage,
   ErrorResponseMsg,
   WireMessage,
 } from "../shared/protocol.js";
 
 // ─── Re-exports for consumers ────────────────────────────────────────────────
 
-export { BridgeConfig, loadConfig } from "./config.js";
+export type { BridgeConfig } from "./config.js";
+export { loadConfig } from "./config.js";
 export { ProtocolError, parseAndValidate } from "./validation.js";
 export type {
   ErrorCode,
@@ -27,15 +32,27 @@ export type {
 
 export class FigmaBridge {
   private wss: WebSocketServer | null = null;
-  private mcpClient: WebSocket | null = null;
+  private mcpClients = new Set<WebSocket>();
   private pluginClient: WebSocket | null = null;
-  private forwardedRequests = new Set<string>();
+  private requestToClient = new Map<string, WebSocket>();
   private config: BridgeConfig;
   private isPluginRegistered = false;
+  private log: Logger;
+  private metrics: MetricsCollector;
 
   constructor(config?: Partial<BridgeConfig>) {
     const defaults = loadConfig();
     this.config = { ...defaults, ...config };
+    this.log = createLogger({
+      component: "bridge",
+      level: this.config.logLevel,
+      pretty: this.config.logPretty,
+    });
+    this.metrics = new MetricsCollector();
+  }
+
+  getMetrics(): MetricsSnapshot {
+    return this.metrics.snapshot();
   }
 
   start(): Promise<void> {
@@ -52,14 +69,15 @@ export class FigmaBridge {
         });
 
         this.wss.on("listening", () => {
-          console.log(
-            `[bridge] Listening on ${this.config.host}:${this.config.port}`,
+          this.log.info(
+            { host: this.config.host, port: this.config.port },
+            "bridge listening",
           );
           resolve();
         });
 
         this.wss.on("error", (err: Error) => {
-          console.error("[bridge] Server error:", err.message);
+          this.log.error({ err }, "server error");
           reject(err);
         });
       } catch (err) {
@@ -70,10 +88,10 @@ export class FigmaBridge {
 
   stop(): Promise<void> {
     return new Promise((resolve) => {
-      if (this.mcpClient) {
-        this.mcpClient.close(1000, "Bridge shutting down");
-        this.mcpClient = null;
+      for (const client of this.mcpClients) {
+        client.close(1000, "Bridge shutting down");
       }
+      this.mcpClients.clear();
       if (this.pluginClient) {
         this.pluginClient.close(1000, "Bridge shutting down");
         this.pluginClient = null;
@@ -104,28 +122,29 @@ export class FigmaBridge {
   }
 
   private handleMcpClient(ws: WebSocket): void {
-    if (this.mcpClient && this.mcpClient.readyState === WebSocket.OPEN) {
-      this.mcpClient.close(4002, "Replaced by new connection");
-    }
-
-    this.mcpClient = ws;
-    console.log("[bridge] MCP client connected");
+    this.mcpClients.add(ws);
+    this.log.info({ mcpClients: this.mcpClients.size }, "mcp client connected");
+    this.metrics.recordConnection("mcpConnects");
 
     ws.on("message", (data: RawData) => {
-      this.onMcpClientMessage(data.toString());
+      this.onMcpClientMessage(ws, data.toString());
     });
 
     ws.on("close", (code: number, reason: Buffer) => {
-      console.log(
-        `[bridge] MCP client disconnected: ${code} ${reason.toString()}`,
+      this.mcpClients.delete(ws);
+      this.log.info(
+        { code, reason: reason.toString(), mcpClients: this.mcpClients.size },
+        "mcp client disconnected",
       );
-      if (this.mcpClient === ws) {
-        this.mcpClient = null;
+      this.metrics.recordConnection("mcpDisconnects");
+
+      for (const [requestId, client] of this.requestToClient) {
+        if (client === ws) this.requestToClient.delete(requestId);
       }
     });
 
     ws.on("error", (err: Error) => {
-      console.error("[bridge] MCP client error:", err.message);
+      this.log.error({ err }, "mcp client error");
     });
   }
 
@@ -154,14 +173,16 @@ export class FigmaBridge {
           this.pluginClient = ws;
           this.isPluginRegistered = true;
           const reg = msg as RegisterMessage;
-          console.log(
-            `[bridge] Plugin registered: ${reg.pluginId} v${reg.pluginVersion}`,
+          this.log.info(
+            { pluginId: reg.pluginId, pluginVersion: reg.pluginVersion },
+            "plugin registered",
           );
+          this.metrics.recordConnection("pluginRegistrations");
 
           return;
         } catch (err) {
           const errMsg = err instanceof Error ? err.message : String(err);
-          console.error("[bridge] Plugin registration failed:", errMsg);
+          this.log.warn({ error: errMsg }, "plugin registration failed");
           ws.close(4003, "Protocol error");
           return;
         }
@@ -172,36 +193,48 @@ export class FigmaBridge {
 
     ws.on("close", (code: number, reason: Buffer) => {
       if (this.pluginClient === ws) {
-        console.log(
-          `[bridge] Plugin disconnected: ${code} ${reason.toString()}`,
+        this.log.info(
+          { code, reason: reason.toString() },
+          "plugin disconnected",
         );
+        this.metrics.recordConnection("pluginDisconnects");
         this.onPluginDisconnect();
       }
     });
 
     ws.on("error", (err: Error) => {
-      console.error("[bridge] Plugin error:", err.message);
+      this.log.error({ err }, "plugin error");
     });
   }
 
-  private onMcpClientMessage(raw: string): void {
+  private onMcpClientMessage(sender: WebSocket, raw: string): void {
     let msg: WireMessage;
     try {
       msg = parseAndValidate(raw);
     } catch (err) {
-      console.error(
-        "[bridge] Invalid message from MCP client:",
-        (err as Error).message,
+      this.log.warn(
+        { error: (err as Error).message },
+        "invalid message from mcp client",
       );
       return;
     }
 
     if (msg.type !== "COMMAND") {
-      console.warn(`[bridge] MCP client sent non-COMMAND message: ${msg.type}`);
+      this.log.warn(
+        { messageType: msg.type },
+        "non-command from mcp client",
+      );
       return;
     }
 
+    const cmdMsg = msg as CommandMessage;
+    const reqLog = this.log.child({ requestId: msg.requestId });
+
+    this.metrics.recordMessageIn();
+
     if (!this.pluginClient || this.pluginClient.readyState !== WebSocket.OPEN) {
+      reqLog.warn("plugin not connected, returning error");
+      this.metrics.recordError("PLUGIN_DISCONNECTED");
       const errorResponse: ErrorResponseMsg = {
         type: "RESPONSE",
         requestId: msg.requestId,
@@ -211,13 +244,14 @@ export class FigmaBridge {
           message: "Figma plugin is not connected to the bridge.",
         },
       };
-      if (this.mcpClient && this.mcpClient.readyState === WebSocket.OPEN) {
-        this.mcpClient.send(JSON.stringify(errorResponse));
+      if (sender.readyState === WebSocket.OPEN) {
+        sender.send(JSON.stringify(errorResponse));
       }
       return;
     }
 
-    this.forwardedRequests.add(msg.requestId);
+    reqLog.debug({ command: cmdMsg.command }, "routing command to plugin");
+    this.requestToClient.set(msg.requestId, sender);
     this.pluginClient.send(raw);
   }
 
@@ -226,22 +260,27 @@ export class FigmaBridge {
     try {
       msg = parseAndValidate(raw);
     } catch (err) {
-      console.error(
-        "[bridge] Invalid message from plugin:",
-        (err as Error).message,
+      this.log.warn(
+        { error: (err as Error).message },
+        "invalid message from plugin",
       );
       return;
     }
 
     if (msg.type !== "RESPONSE") {
-      console.warn(`[bridge] Plugin sent non-RESPONSE message: ${msg.type}`);
+      this.log.warn(
+        { messageType: msg.type },
+        "non-response from plugin",
+      );
       return;
     }
 
-    this.forwardedRequests.delete(msg.requestId);
+    const sender = this.requestToClient.get(msg.requestId);
+    this.requestToClient.delete(msg.requestId);
+    this.metrics.recordMessageOut();
 
-    if (this.mcpClient && this.mcpClient.readyState === WebSocket.OPEN) {
-      this.mcpClient.send(raw);
+    if (sender && sender.readyState === WebSocket.OPEN) {
+      sender.send(raw);
     }
   }
 
@@ -249,27 +288,28 @@ export class FigmaBridge {
     this.pluginClient = null;
     this.isPluginRegistered = false;
 
-    if (this.mcpClient && this.mcpClient.readyState === WebSocket.OPEN) {
-      for (const requestId of this.forwardedRequests) {
-        const errorResponse: ErrorResponseMsg = {
-          type: "RESPONSE",
-          requestId,
-          success: false,
-          error: {
-            code: "PLUGIN_DISCONNECTED",
-            message: "Figma plugin disconnected before responding.",
-          },
-        };
-        this.mcpClient.send(JSON.stringify(errorResponse));
+    for (const [requestId, client] of this.requestToClient) {
+      this.log.warn({ requestId }, "rejecting pending request after plugin disconnect");
+      this.metrics.recordError("PLUGIN_DISCONNECTED");
+      const errorResponse: ErrorResponseMsg = {
+        type: "RESPONSE",
+        requestId,
+        success: false,
+        error: {
+          code: "PLUGIN_DISCONNECTED",
+          message: "Figma plugin disconnected before responding.",
+        },
+      };
+      if (client.readyState === WebSocket.OPEN) {
+        client.send(JSON.stringify(errorResponse));
       }
     }
-    this.forwardedRequests.clear();
+    this.requestToClient.clear();
   }
 
   get isReady(): boolean {
     return (
-      this.mcpClient !== null &&
-      this.mcpClient.readyState === WebSocket.OPEN &&
+      this.mcpClients.size > 0 &&
       this.pluginClient !== null &&
       this.pluginClient.readyState === WebSocket.OPEN &&
       this.isPluginRegistered
@@ -277,7 +317,11 @@ export class FigmaBridge {
   }
 
   get pendingCount(): number {
-    return this.forwardedRequests.size;
+    return this.requestToClient.size;
+  }
+
+  get mcpClientCount(): number {
+    return this.mcpClients.size;
   }
 }
 
@@ -287,25 +331,28 @@ const isMainModule = process.argv[1] === fileURLToPath(import.meta.url);
 
 if (isMainModule) {
   const bridge = new FigmaBridge();
+  const log = createLogger({ component: "bridge" });
 
   bridge
     .start()
     .catch((err) => {
-      console.error("[bridge] Failed to start:", err);
+      log.fatal({ err }, "failed to start");
       process.exit(1);
     })
     .then(() => {
-      console.log("[bridge] Server running. Press Ctrl+C to stop.");
+      log.info("server running, press Ctrl+C to stop");
     });
 
   process.on("SIGINT", async () => {
-    console.log("\n[bridge] Shutting down...");
+    log.info("shutting down (SIGINT)");
+    log.info({ metrics: bridge.getMetrics() }, "final metrics snapshot");
     await bridge.stop();
     process.exit(0);
   });
 
   process.on("SIGTERM", async () => {
-    console.log("[bridge] Shutting down...");
+    log.info("shutting down (SIGTERM)");
+    log.info({ metrics: bridge.getMetrics() }, "final metrics snapshot");
     await bridge.stop();
     process.exit(0);
   });

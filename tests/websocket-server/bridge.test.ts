@@ -355,18 +355,67 @@ describe("FigmaBridge", () => {
     mcpClient.close();
   });
 
-  it("replaces old MCP client on new connection", async () => {
-    const oldClient = await connectMcpClient();
+  it("accepts multiple MCP clients simultaneously", async () => {
+    const client1 = await connectMcpClient();
+    const client2 = await connectMcpClient();
 
-    const closePromise = new Promise<number>((resolve) => {
-      oldClient.on("close", (code) => resolve(code));
-    });
+    expect(client1.readyState).toBe(WebSocket.OPEN);
+    expect(client2.readyState).toBe(WebSocket.OPEN);
+    expect(bridge.mcpClientCount).toBe(2);
 
-    const newClient = await connectMcpClient();
-    const code = await closePromise;
-    expect(code).toBe(4002);
+    client1.close();
+    client2.close();
+  });
 
-    newClient.close();
+  it("routes responses to the correct MCP client", async () => {
+    const plugin = await connectPlugin();
+    const client1 = await connectMcpClient();
+    const client2 = await connectMcpClient();
+
+    const cmd1 = {
+      type: "COMMAND",
+      requestId: "req_10_aaa111",
+      command: "get_selection",
+      args: {},
+    };
+    const cmd2 = {
+      type: "COMMAND",
+      requestId: "req_11_bbb222",
+      command: "get_document_info",
+      args: {},
+    };
+
+    const pluginMsg1 = waitForMessage(plugin);
+    client1.send(JSON.stringify(cmd1));
+    await pluginMsg1;
+
+    const pluginMsg2 = waitForMessage(plugin);
+    client2.send(JSON.stringify(cmd2));
+    await pluginMsg2;
+
+    const resp1Promise = waitForMessage(client1);
+    plugin.send(JSON.stringify({
+      type: "RESPONSE",
+      requestId: "req_10_aaa111",
+      success: true,
+      data: { from: "plugin-for-client1" },
+    }));
+    const resp1 = await resp1Promise;
+    expect((resp1 as ResponseMessage).requestId).toBe("req_10_aaa111");
+
+    const resp2Promise = waitForMessage(client2);
+    plugin.send(JSON.stringify({
+      type: "RESPONSE",
+      requestId: "req_11_bbb222",
+      success: true,
+      data: { from: "plugin-for-client2" },
+    }));
+    const resp2 = await resp2Promise;
+    expect((resp2 as ResponseMessage).requestId).toBe("req_11_bbb222");
+
+    client1.close();
+    client2.close();
+    plugin.close();
   });
 
   it("replaces old plugin on new REGISTER", async () => {

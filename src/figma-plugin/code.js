@@ -4,6 +4,24 @@
 //
 // ALLOWED_COMMANDS source of truth: src/shared/constants.ts → COMMAND_NAMES
 
+// ─── Lightweight Logger (no Node.js / pino in Figma sandbox) ─────────────────
+
+var LOG_LEVELS = { trace: 0, debug: 1, info: 2, warn: 3, error: 4, fatal: 5 };
+var CURRENT_LOG_LEVEL = LOG_LEVELS.info;
+
+function pluginLog(level, msg, data) {
+  if (LOG_LEVELS[level] === undefined || LOG_LEVELS[level] < CURRENT_LOG_LEVEL) return;
+  var entry = "[plugin:" + level + "] " + msg;
+  if (data) entry += " " + JSON.stringify(data);
+  if (level === "error" || level === "fatal") {
+    console.error(entry);
+  } else if (level === "warn") {
+    console.warn(entry);
+  } else {
+    console.log(entry);
+  }
+}
+
 // ─── Null-coalescing helper (Figma runtime is ES6, no ?? operator) ────────────
 
 function nvl(val, fallback) {
@@ -79,6 +97,26 @@ const ALLOWED_COMMANDS = new Set([
   "create_variable_collection",
   "create_variable",
   "bind_variable",
+  // Phase 4: Workflow
+  "flatten_node",
+  "ungroup_nodes",
+  "set_selection",
+  "set_current_page",
+  "create_effect_style",
+  "get_variables",
+  // Phase 5: Design system
+  "combine_as_variants",
+  "detach_instance",
+  "swap_component",
+  "import_component_by_key",
+  // Phase 6: Manipulation
+  "set_rotation",
+  "set_blend_mode",
+  "lock_node",
+  // Phase 6: Extra shapes
+  "create_star",
+  "create_svg_node",
+  "notify",
 ]);
 
 function isAllowedCommand(cmd) {
@@ -734,27 +772,11 @@ async function handleCreateComponent(args) {
   const nodeId = assertString(args.nodeId, "nodeId");
   const node = findNode(nodeId);
 
-  if (!["FRAME", "GROUP", "RECTANGLE", "ELLIPSE", "TEXT"].includes(node.type)) {
+  if (!["FRAME", "GROUP", "RECTANGLE", "ELLIPSE", "TEXT", "LINE", "POLYGON", "STAR", "VECTOR"].includes(node.type)) {
     throw new Error(`Cannot convert ${node.type} to component`);
   }
 
-  const component = figma.createComponent();
-  component.name = node.name;
-  component.resize(node.width, node.height);
-  component.x = node.x;
-  component.y = node.y;
-
-  if ("children" in node) {
-    const children = node.children.slice();
-    for (let i = 0; i < children.length; i++) {
-      component.appendChild(children[i]);
-    }
-  }
-  if ("fills" in node) {
-    component.fills = node.fills;
-  }
-
-  node.remove();
+  var component = node.type === "COMPONENT" ? node : figma.createComponentFromNode(node);
 
   return { componentId: component.id, name: component.name, type: "COMPONENT" };
 }
@@ -1614,6 +1636,216 @@ async function handleBindVariable(args) {
   return { nodeId: node.id, property: property, variableId: variableId };
 }
 
+// ─── Phase 4: Workflow Tools ──────────────────────────────────────────────────
+
+async function handleFlattenNode(args) {
+  const nodeId = assertString(args.nodeId, "nodeId");
+  const node = findNode(nodeId);
+  var flat = figma.flatten([node]);
+  return { nodeId: flat.id, name: flat.name, type: flat.type };
+}
+
+async function handleUngroupNodes(args) {
+  const nodeId = assertString(args.nodeId, "nodeId");
+  const node = findNode(nodeId);
+  if (node.type !== "GROUP") throw new Error("Node " + nodeId + " is not a GROUP");
+  var parent = node.parent || figma.currentPage;
+  if (!("insertChild" in parent)) throw new Error("Parent does not support children");
+  var children = node.children.slice();
+  var idx = parent.children.indexOf(node);
+  var movedIds = [];
+  for (var i = 0; i < children.length; i++) {
+    parent.insertChild(idx + i, children[i]);
+    movedIds.push(children[i].id);
+  }
+  node.remove();
+  return { movedNodeIds: movedIds, count: movedIds.length };
+}
+
+async function handleSetSelection(args) {
+  if (!Array.isArray(args.nodeIds)) throw new Error("nodeIds must be an array");
+  var nodes = args.nodeIds.map(function (id) { return findNode(assertString(id, "nodeId")); });
+  figma.currentPage.selection = nodes;
+  return { selectedCount: nodes.length };
+}
+
+async function handleSetCurrentPage(args) {
+  const pageId = assertString(args.pageId, "pageId");
+  const page = figma.getNodeById(pageId);
+  if (!page || page.type !== "PAGE") throw new Error("Page " + pageId + " not found");
+  await figma.setCurrentPageAsync(page);
+  return { pageId: page.id, pageName: page.name };
+}
+
+async function handleCreateEffectStyle(args) {
+  const name = assertString(args.name, "name");
+  if (!Array.isArray(args.effects)) throw new Error("effects must be an array");
+  var style = figma.createEffectStyle();
+  style.name = name;
+  style.effects = args.effects.map(function (e, i) {
+    var t = e.type;
+    if (t === "DROP_SHADOW" || t === "INNER_SHADOW") {
+      var c = assertRGBA(nvl(e.color, { r: 0, g: 0, b: 0, a: 0.25 }), "effects[" + i + "].color");
+      return {
+        type: t,
+        color: { r: c.r, g: c.g, b: c.b, a: c.a },
+        offset: { x: nvl(e.offsetX, 0), y: nvl(e.offsetY, 4) },
+        radius: nvl(e.blur, 8),
+        spread: nvl(e.spread, 0),
+        visible: nvl(e.visible, true),
+        blendMode: nvl(e.blendMode, "NORMAL"),
+      };
+    }
+    if (t === "LAYER_BLUR" || t === "BACKGROUND_BLUR") {
+      return { type: t, radius: nvl(e.radius, t === "BACKGROUND_BLUR" ? 8 : 4), visible: nvl(e.visible, true) };
+    }
+    throw new Error("Unsupported effect type: " + t);
+  });
+  return { styleId: style.id, name: style.name, type: "EFFECT" };
+}
+
+async function handleGetVariables(_args) {
+  var collections = figma.variables.getLocalVariableCollections();
+  var variables = figma.variables.getLocalVariables();
+  return {
+    collections: collections.map(function (c) {
+      return { id: c.id, name: c.name, modes: c.modes };
+    }),
+    variables: variables.map(function (v) {
+      return {
+        id: v.id,
+        name: v.name,
+        resolvedType: v.resolvedType,
+        collectionId: v.variableCollectionId,
+      };
+    }),
+    collectionCount: collections.length,
+    variableCount: variables.length,
+  };
+}
+
+// ─── Phase 5: Design System Tools ────────────────────────────────────────────
+
+async function handleCombineAsVariants(args) {
+  if (!Array.isArray(args.nodeIds) || args.nodeIds.length < 2)
+    throw new Error("nodeIds must have at least 2 elements");
+  var nodes = args.nodeIds.map(function (id) { return findNode(assertString(id, "nodeId")); });
+  for (var i = 0; i < nodes.length; i++) {
+    if (nodes[i].type !== "COMPONENT")
+      throw new Error("Node " + nodes[i].id + " is not a COMPONENT");
+  }
+  var parent = nvl(nodes[0].parent, figma.currentPage);
+  var componentSet = figma.combineAsVariants(nodes, parent);
+  if (args.name) componentSet.name = assertString(args.name, "name");
+  return { nodeId: componentSet.id, name: componentSet.name, type: "COMPONENT_SET", variantCount: componentSet.children.length };
+}
+
+async function handleDetachInstance(args) {
+  const nodeId = assertString(args.nodeId, "nodeId");
+  const node = findNode(nodeId);
+  if (node.type !== "INSTANCE") throw new Error("Node " + nodeId + " is not an INSTANCE");
+  var frame = node.detachInstance();
+  return { nodeId: frame.id, name: frame.name, type: frame.type };
+}
+
+async function handleSwapComponent(args) {
+  const nodeId = assertString(args.nodeId, "nodeId");
+  const newComponentId = assertString(args.newComponentId, "newComponentId");
+  const node = findNode(nodeId);
+  if (node.type !== "INSTANCE") throw new Error("Node " + nodeId + " is not an INSTANCE");
+  var newComponent = figma.getNodeById(newComponentId);
+  if (!newComponent || newComponent.type !== "COMPONENT")
+    throw new Error("Component " + newComponentId + " not found");
+  node.swapComponent(newComponent);
+  return { nodeId: node.id, name: node.name, newComponentId: newComponentId };
+}
+
+async function handleImportComponentByKey(args) {
+  const key = assertString(args.key, "key");
+  var component = await figma.importComponentByKeyAsync(key);
+  return { componentId: component.id, name: component.name, key: component.key };
+}
+
+// ─── Phase 6: Manipulation Tools ─────────────────────────────────────────────
+
+async function handleSetRotation(args) {
+  const nodeId = assertString(args.nodeId, "nodeId");
+  const rotation = assertNumber(args.rotation, "rotation", -360, 360);
+  const node = findNode(nodeId);
+  node.rotation = rotation;
+  return { nodeId: node.id, rotation: node.rotation };
+}
+
+async function handleSetBlendMode(args) {
+  const nodeId = assertString(args.nodeId, "nodeId");
+  const blendMode = assertString(args.blendMode, "blendMode");
+  const node = findNode(nodeId);
+  if (!("blendMode" in node)) throw new Error("Node " + nodeId + " does not support blendMode");
+  node.blendMode = blendMode;
+  return { nodeId: node.id, blendMode: node.blendMode };
+}
+
+async function handleLockNode(args) {
+  const nodeId = assertString(args.nodeId, "nodeId");
+  const node = findNode(nodeId);
+  if (typeof args.locked !== "boolean") throw new Error("locked must be a boolean");
+  node.locked = args.locked;
+  return { nodeId: node.id, locked: node.locked };
+}
+
+// ─── Phase 6: Extra Shape Tools ──────────────────────────────────────────────
+
+async function handleCreateStar(args) {
+  const name = assertString(nvl(args.name, "Star"), "name");
+  const pointCount = assertNumber(nvl(args.pointCount, 5), "pointCount", 3, 20);
+  const innerRadius = assertNumber(nvl(args.innerRadius, 0.382), "innerRadius", 0.01, 0.99);
+  const width = assertNumber(nvl(args.width, 100), "width", 1, 100000);
+  const height = assertNumber(nvl(args.height, 100), "height", 1, 100000);
+  const x = assertNumber(nvl(args.x, 0), "x", -100000, 100000);
+  const y = assertNumber(nvl(args.y, 0), "y", -100000, 100000);
+  const parentId = assertOptionalString(args.parentId, "parentId");
+  const fills = args.fills ? assertFills(args.fills, "fills") : undefined;
+
+  var star = figma.createStar();
+  star.name = name;
+  star.pointCount = pointCount;
+  star.innerRadius = innerRadius;
+  star.resize(width, height);
+  star.x = x;
+  star.y = y;
+  if (fills) star.fills = fillsToFigma(fills);
+
+  var parent = resolveParent(parentId);
+  if (parent !== figma.currentPage) parent.appendChild(star);
+
+  return { nodeId: star.id, name: star.name, type: "STAR" };
+}
+
+async function handleCreateSvgNode(args) {
+  const svg = assertString(args.svg, "svg");
+  const x = assertNumber(nvl(args.x, 0), "x", -100000, 100000);
+  const y = assertNumber(nvl(args.y, 0), "y", -100000, 100000);
+  const parentId = assertOptionalString(args.parentId, "parentId");
+
+  var node = figma.createNodeFromSvg(svg);
+  node.x = x;
+  node.y = y;
+  if (args.name) node.name = assertString(args.name, "name");
+
+  var parent = resolveParent(parentId);
+  if (parent !== figma.currentPage) parent.appendChild(node);
+
+  return { nodeId: node.id, name: node.name, type: node.type };
+}
+
+async function handleNotify(args) {
+  const message = assertString(args.message, "message");
+  const isError = !!args.error;
+  const timeout = assertNumber(nvl(args.timeout, 4000), "timeout", 1000, 30000);
+  figma.notify(message, { error: isError, timeout: timeout });
+  return { message: message, error: isError, timeout: timeout };
+}
+
 // ─── Handler Registry ────────────────────────────────────────────────────────
 
 const handlers = {
@@ -1683,6 +1915,26 @@ const handlers = {
   create_variable_collection: handleCreateVariableCollection,
   create_variable: handleCreateVariable,
   bind_variable: handleBindVariable,
+  // Phase 4: Workflow
+  flatten_node: handleFlattenNode,
+  ungroup_nodes: handleUngroupNodes,
+  set_selection: handleSetSelection,
+  set_current_page: handleSetCurrentPage,
+  create_effect_style: handleCreateEffectStyle,
+  get_variables: handleGetVariables,
+  // Phase 5: Design system
+  combine_as_variants: handleCombineAsVariants,
+  detach_instance: handleDetachInstance,
+  swap_component: handleSwapComponent,
+  import_component_by_key: handleImportComponentByKey,
+  // Phase 6: Manipulation
+  set_rotation: handleSetRotation,
+  set_blend_mode: handleSetBlendMode,
+  lock_node: handleLockNode,
+  // Phase 6: Extra shapes
+  create_star: handleCreateStar,
+  create_svg_node: handleCreateSvgNode,
+  notify: handleNotify,
 };
 
 // ─── Message Dispatcher ──────────────────────────────────────────────────────
@@ -1705,7 +1957,7 @@ function sendResponse(requestId, success, data, error) {
 const DEFAULT_BRIDGE_URL = "ws://localhost:9001";
 
 figma.showUI(__html__, { visible: true, width: 300, height: 240 });
-console.log("[plugin] Figma MCP Bridge plugin loaded and ready");
+pluginLog("info", "Figma MCP Bridge plugin loaded and ready");
 
 (async () => {
   const saved = await figma.clientStorage.getAsync("bridgeUrl");
@@ -1734,7 +1986,7 @@ figma.ui.onmessage = async (msg) => {
     typeof msg.args === "object" && msg.args !== null ? msg.args : {};
 
   if (!isValidRequestId(requestId)) {
-    console.error("[plugin] Invalid requestId:", requestId);
+    pluginLog("error", "Invalid requestId", { requestId: requestId });
     return;
   }
 
@@ -1755,10 +2007,18 @@ figma.ui.onmessage = async (msg) => {
   }
 
   try {
+    var cmdStart = Date.now();
     const data = await handlers[command](args);
+    var cmdDuration = Date.now() - cmdStart;
+    pluginLog("info", "command completed", {
+      command: command, requestId: requestId, durationMs: cmdDuration
+    });
     sendResponse(requestId, true, data);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
+    pluginLog("error", "command failed", {
+      command: command, requestId: requestId, error: message
+    });
     const code =
       message.indexOf("not found") !== -1
         ? "NODE_NOT_FOUND"

@@ -18,7 +18,7 @@ export const BatchCreateInput = z
                 "create_polygon",
               ])
               .describe("Create command to execute"),
-            args: z.record(z.unknown()).describe("Arguments for the command"),
+            args: z.record(z.string(), z.unknown()).describe("Arguments for the command"),
           })
           .strict(),
       )

@@ -17,12 +17,16 @@ import { VECTOR_TOOLS } from "./vector-tools.js";
 import { PAGE_TOOLS } from "./page-tools.js";
 import { TRAVERSAL_TOOLS } from "./traversal-tools.js";
 import { VARIABLE_TOOLS } from "./variable-tools.js";
+import { WORKFLOW_TOOLS } from "./workflow-tools.js";
+import { DESIGN_SYSTEM_TOOLS } from "./design-system-tools.js";
+import { MANIPULATION_TOOLS } from "./manipulation-tools.js";
+import { EXTRA_SHAPE_TOOLS } from "./extra-shape-tools.js";
 
 // ─── Tool Definition Interface ───────────────────────────────────────────────
 
 export interface ToolDefinition {
   description: string;
-  inputSchema: z.AnyZodObject;
+  inputSchema: z.ZodObject<any>;
 }
 
 // ─── Merged Tool Registry ────────────────────────────────────────────────────
@@ -46,6 +50,10 @@ export const TOOL_REGISTRY: Record<string, ToolDefinition> = {
   ...PAGE_TOOLS,
   ...TRAVERSAL_TOOLS,
   ...VARIABLE_TOOLS,
+  ...WORKFLOW_TOOLS,
+  ...DESIGN_SYSTEM_TOOLS,
+  ...MANIPULATION_TOOLS,
+  ...EXTRA_SHAPE_TOOLS,
 };
 
 // ─── Re-exports ──────────────────────────────────────────────────────────────
@@ -156,3 +164,31 @@ export {
   CreateVariableInput,
   BindVariableInput,
 } from "./variable-tools.js";
+
+export {
+  FlattenNodeInput,
+  UngroupNodesInput,
+  SetSelectionInput,
+  SetCurrentPageInput,
+  CreateEffectStyleInput,
+  GetVariablesInput,
+} from "./workflow-tools.js";
+
+export {
+  CombineAsVariantsInput,
+  DetachInstanceInput,
+  SwapComponentInput,
+  ImportComponentByKeyInput,
+} from "./design-system-tools.js";
+
+export {
+  SetRotationInput,
+  SetBlendModeInput,
+  LockNodeInput,
+} from "./manipulation-tools.js";
+
+export {
+  CreateStarInput,
+  CreateSvgNodeInput,
+  NotifyInput,
+} from "./extra-shape-tools.js";

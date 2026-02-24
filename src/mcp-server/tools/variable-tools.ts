@@ -32,7 +32,7 @@ export const CreateVariableInput = z
       .enum(["COLOR", "FLOAT", "STRING", "BOOLEAN"])
       .describe("Variable type"),
     values: z
-      .record(z.unknown())
+      .record(z.string(), z.unknown())
       .optional()
       .describe(
         "Values per mode, keyed by mode ID. e.g. { 'modeId1': { r:1,g:0,b:0,a:1 } }",

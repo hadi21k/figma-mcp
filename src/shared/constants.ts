@@ -67,6 +67,26 @@ export const COMMAND_NAMES = [
   "create_variable_collection",
   "create_variable",
   "bind_variable",
+  // Phase 4: Workflow tools
+  "flatten_node",
+  "ungroup_nodes",
+  "set_selection",
+  "set_current_page",
+  "create_effect_style",
+  "get_variables",
+  // Phase 5: Design system tools
+  "combine_as_variants",
+  "detach_instance",
+  "swap_component",
+  "import_component_by_key",
+  // Phase 6: Manipulation tools
+  "set_rotation",
+  "set_blend_mode",
+  "lock_node",
+  // Phase 6: Extra shape tools
+  "create_star",
+  "create_svg_node",
+  "notify",
 ] as const;
 
 export type CommandName = (typeof COMMAND_NAMES)[number];
@@ -81,3 +101,19 @@ export const DEFAULT_WS_HOST = "127.0.0.1";
 export const DEFAULT_WS_PORT = 9001;
 export const DEFAULT_TIMEOUT_MS = 30_000;
 export const MAX_MESSAGE_BYTES = 1_048_576; // 1 MB (increased for image data)
+
+// ─── Logging ─────────────────────────────────────────────────────────────────
+
+export const LOG_LEVELS = [
+  "trace",
+  "debug",
+  "info",
+  "warn",
+  "error",
+  "fatal",
+  "silent",
+] as const;
+
+export type LogLevel = (typeof LOG_LEVELS)[number];
+
+export const DEFAULT_LOG_LEVEL: LogLevel = "info";

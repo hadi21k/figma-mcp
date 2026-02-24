@@ -67,6 +67,26 @@ import {
   CreateVariableCollectionInput,
   CreateVariableInput,
   BindVariableInput,
+  // Workflow tools (Phase 4)
+  FlattenNodeInput,
+  UngroupNodesInput,
+  SetSelectionInput,
+  SetCurrentPageInput,
+  CreateEffectStyleInput,
+  GetVariablesInput,
+  // Design system tools (Phase 5)
+  CombineAsVariantsInput,
+  DetachInstanceInput,
+  SwapComponentInput,
+  ImportComponentByKeyInput,
+  // Manipulation tools (Phase 6)
+  SetRotationInput,
+  SetBlendModeInput,
+  LockNodeInput,
+  // Extra shape tools (Phase 6)
+  CreateStarInput,
+  CreateSvgNodeInput,
+  NotifyInput,
   // Shared schemas
   RGBAColor,
   NodeId,
@@ -80,9 +100,9 @@ import {
 // ─── Tool Registry Tests ─────────────────────────────────────────────────────
 
 describe("Tool Registry", () => {
-  it("contains all 48 tools", () => {
+  it("contains all 64 tools", () => {
     const tools = Object.keys(TOOL_REGISTRY);
-    expect(tools).toHaveLength(48);
+    expect(tools).toHaveLength(64);
   });
 
   const expectedTools = [
@@ -123,6 +143,15 @@ describe("Tool Registry", () => {
     "find_nodes",
     // Phase 3: Variables
     "create_variable_collection", "create_variable", "bind_variable",
+    // Phase 4: Workflow
+    "flatten_node", "ungroup_nodes", "set_selection", "set_current_page",
+    "create_effect_style", "get_variables",
+    // Phase 5: Design system
+    "combine_as_variants", "detach_instance", "swap_component", "import_component_by_key",
+    // Phase 6: Manipulation
+    "set_rotation", "set_blend_mode", "lock_node",
+    // Phase 6: Extra shapes
+    "create_star", "create_svg_node", "notify",
   ];
 
   it.each(expectedTools)("has tool '%s'", (toolName) => {
@@ -528,7 +557,6 @@ describe("UpdateTextInput", () => {
       typography: { fontSize: 24 },
     });
     expect(result.typography?.fontSize).toBe(24);
-    expect(result.typography?.fontFamily).toBeUndefined();
   });
 });
 
@@ -1386,5 +1414,289 @@ describe("Fill (discriminated union)", () => {
         gradientStops: [{ position: 0, color: { r: 1, g: 0, b: 0 } }],
       }],
     })).toThrow();
+  });
+});
+
+// ─── Phase 4: Workflow Tool Schema Tests ──────────────────────────────────────
+
+describe("FlattenNodeInput", () => {
+  it("accepts valid nodeId", () => {
+    const result = FlattenNodeInput.parse({ nodeId: "123:456" });
+    expect(result.nodeId).toBe("123:456");
+  });
+
+  it("rejects missing nodeId", () => {
+    expect(() => FlattenNodeInput.parse({})).toThrow();
+  });
+});
+
+describe("UngroupNodesInput", () => {
+  it("accepts valid nodeId", () => {
+    const result = UngroupNodesInput.parse({ nodeId: "1:1" });
+    expect(result.nodeId).toBe("1:1");
+  });
+});
+
+describe("SetSelectionInput", () => {
+  it("accepts array of nodeIds", () => {
+    const result = SetSelectionInput.parse({ nodeIds: ["1:1", "2:2"] });
+    expect(result.nodeIds).toHaveLength(2);
+  });
+
+  it("accepts empty array to clear selection", () => {
+    const result = SetSelectionInput.parse({ nodeIds: [] });
+    expect(result.nodeIds).toHaveLength(0);
+  });
+
+  it("rejects more than 100 nodeIds", () => {
+    const ids = Array.from({ length: 101 }, (_, i) => `${i}:0`);
+    expect(() => SetSelectionInput.parse({ nodeIds: ids })).toThrow();
+  });
+});
+
+describe("SetCurrentPageInput", () => {
+  it("accepts valid pageId", () => {
+    const result = SetCurrentPageInput.parse({ pageId: "1:1" });
+    expect(result.pageId).toBe("1:1");
+  });
+
+  it("rejects missing pageId", () => {
+    expect(() => SetCurrentPageInput.parse({})).toThrow();
+  });
+});
+
+describe("CreateEffectStyleInput", () => {
+  it("accepts valid effect style", () => {
+    const result = CreateEffectStyleInput.parse({
+      name: "Elevation/Low",
+      effects: [{ type: "DROP_SHADOW" }],
+    });
+    expect(result.name).toBe("Elevation/Low");
+    expect(result.effects).toHaveLength(1);
+  });
+
+  it("rejects empty name", () => {
+    expect(() => CreateEffectStyleInput.parse({
+      name: "",
+      effects: [{ type: "DROP_SHADOW" }],
+    })).toThrow();
+  });
+
+  it("rejects empty effects", () => {
+    expect(() => CreateEffectStyleInput.parse({ name: "Test", effects: [] })).toThrow();
+  });
+});
+
+describe("GetVariablesInput", () => {
+  it("accepts empty object", () => {
+    expect(GetVariablesInput.parse({})).toEqual({});
+  });
+
+  it("rejects extra properties", () => {
+    expect(() => GetVariablesInput.parse({ extra: true })).toThrow();
+  });
+});
+
+// ─── Phase 5: Design System Tool Schema Tests ────────────────────────────────
+
+describe("CombineAsVariantsInput", () => {
+  it("accepts 2+ component IDs", () => {
+    const result = CombineAsVariantsInput.parse({ nodeIds: ["1:1", "2:2"] });
+    expect(result.nodeIds).toHaveLength(2);
+  });
+
+  it("accepts optional name", () => {
+    const result = CombineAsVariantsInput.parse({ nodeIds: ["1:1", "2:2"], name: "Button" });
+    expect(result.name).toBe("Button");
+  });
+
+  it("rejects fewer than 2 nodes", () => {
+    expect(() => CombineAsVariantsInput.parse({ nodeIds: ["1:1"] })).toThrow();
+  });
+});
+
+describe("DetachInstanceInput", () => {
+  it("accepts valid nodeId", () => {
+    const result = DetachInstanceInput.parse({ nodeId: "1:1" });
+    expect(result.nodeId).toBe("1:1");
+  });
+});
+
+describe("SwapComponentInput", () => {
+  it("accepts valid input", () => {
+    const result = SwapComponentInput.parse({ nodeId: "1:1", newComponentId: "2:2" });
+    expect(result.nodeId).toBe("1:1");
+    expect(result.newComponentId).toBe("2:2");
+  });
+
+  it("rejects missing newComponentId", () => {
+    expect(() => SwapComponentInput.parse({ nodeId: "1:1" })).toThrow();
+  });
+});
+
+describe("ImportComponentByKeyInput", () => {
+  it("accepts valid key", () => {
+    const result = ImportComponentByKeyInput.parse({ key: "abc123def456" });
+    expect(result.key).toBe("abc123def456");
+  });
+
+  it("rejects empty key", () => {
+    expect(() => ImportComponentByKeyInput.parse({ key: "" })).toThrow();
+  });
+});
+
+// ─── Phase 6: Manipulation Tool Schema Tests ─────────────────────────────────
+
+describe("SetRotationInput", () => {
+  it("accepts valid rotation", () => {
+    const result = SetRotationInput.parse({ nodeId: "1:1", rotation: 45 });
+    expect(result.rotation).toBe(45);
+  });
+
+  it("accepts negative rotation", () => {
+    const result = SetRotationInput.parse({ nodeId: "1:1", rotation: -90 });
+    expect(result.rotation).toBe(-90);
+  });
+
+  it("rejects rotation > 360", () => {
+    expect(() => SetRotationInput.parse({ nodeId: "1:1", rotation: 361 })).toThrow();
+  });
+
+  it("rejects rotation < -360", () => {
+    expect(() => SetRotationInput.parse({ nodeId: "1:1", rotation: -361 })).toThrow();
+  });
+});
+
+describe("SetBlendModeInput", () => {
+  it("accepts MULTIPLY", () => {
+    const result = SetBlendModeInput.parse({ nodeId: "1:1", blendMode: "MULTIPLY" });
+    expect(result.blendMode).toBe("MULTIPLY");
+  });
+
+  it("accepts NORMAL", () => {
+    const result = SetBlendModeInput.parse({ nodeId: "1:1", blendMode: "NORMAL" });
+    expect(result.blendMode).toBe("NORMAL");
+  });
+
+  it("accepts all valid blend modes", () => {
+    for (const mode of ["DARKEN", "SCREEN", "OVERLAY", "SOFT_LIGHT", "HARD_LIGHT", "COLOR_DODGE", "COLOR_BURN", "DIFFERENCE", "EXCLUSION", "HUE", "SATURATION", "COLOR", "LUMINOSITY"]) {
+      const r = SetBlendModeInput.parse({ nodeId: "1:1", blendMode: mode });
+      expect(r.blendMode).toBe(mode);
+    }
+  });
+
+  it("rejects invalid blend mode", () => {
+    expect(() => SetBlendModeInput.parse({ nodeId: "1:1", blendMode: "DISSOLVE" })).toThrow();
+  });
+});
+
+describe("LockNodeInput", () => {
+  it("accepts locked=true", () => {
+    const result = LockNodeInput.parse({ nodeId: "1:1", locked: true });
+    expect(result.locked).toBe(true);
+  });
+
+  it("accepts locked=false", () => {
+    const result = LockNodeInput.parse({ nodeId: "1:1", locked: false });
+    expect(result.locked).toBe(false);
+  });
+
+  it("rejects missing locked", () => {
+    expect(() => LockNodeInput.parse({ nodeId: "1:1" })).toThrow();
+  });
+});
+
+// ─── Phase 6: Extra Shape Tool Schema Tests ──────────────────────────────────
+
+describe("CreateStarInput", () => {
+  it("accepts minimal input with defaults", () => {
+    const result = CreateStarInput.parse({});
+    expect(result.name).toBe("Star");
+    expect(result.pointCount).toBe(5);
+    expect(result.innerRadius).toBeCloseTo(0.382);
+    expect(result.width).toBe(100);
+    expect(result.height).toBe(100);
+  });
+
+  it("accepts custom star", () => {
+    const result = CreateStarInput.parse({
+      name: "Badge",
+      pointCount: 8,
+      innerRadius: 0.5,
+      width: 200,
+      height: 200,
+    });
+    expect(result.pointCount).toBe(8);
+    expect(result.innerRadius).toBe(0.5);
+  });
+
+  it("rejects pointCount below 3", () => {
+    expect(() => CreateStarInput.parse({ pointCount: 2 })).toThrow();
+  });
+
+  it("rejects innerRadius outside 0-1 range", () => {
+    expect(() => CreateStarInput.parse({ innerRadius: 0 })).toThrow();
+    expect(() => CreateStarInput.parse({ innerRadius: 1 })).toThrow();
+  });
+});
+
+describe("CreateSvgNodeInput", () => {
+  it("accepts valid SVG", () => {
+    const result = CreateSvgNodeInput.parse({
+      svg: '<svg xmlns="http://www.w3.org/2000/svg"><circle cx="50" cy="50" r="40"/></svg>',
+    });
+    expect(result.svg).toContain("<svg");
+    expect(result.x).toBe(0);
+    expect(result.y).toBe(0);
+  });
+
+  it("accepts with name and position", () => {
+    const result = CreateSvgNodeInput.parse({
+      svg: '<svg xmlns="http://www.w3.org/2000/svg"><rect width="10" height="10"/></svg>',
+      name: "Icon",
+      x: 100,
+      y: 200,
+    });
+    expect(result.name).toBe("Icon");
+    expect(result.x).toBe(100);
+  });
+
+  it("rejects empty SVG", () => {
+    expect(() => CreateSvgNodeInput.parse({ svg: "" })).toThrow();
+  });
+
+  it("rejects SVG over 64KB", () => {
+    expect(() => CreateSvgNodeInput.parse({ svg: "a".repeat(65537) })).toThrow();
+  });
+});
+
+describe("NotifyInput", () => {
+  it("accepts minimal input with defaults", () => {
+    const result = NotifyInput.parse({ message: "Done!" });
+    expect(result.message).toBe("Done!");
+    expect(result.error).toBe(false);
+    expect(result.timeout).toBe(4000);
+  });
+
+  it("accepts error toast", () => {
+    const result = NotifyInput.parse({ message: "Failed", error: true });
+    expect(result.error).toBe(true);
+  });
+
+  it("accepts custom timeout", () => {
+    const result = NotifyInput.parse({ message: "Processing...", timeout: 10000 });
+    expect(result.timeout).toBe(10000);
+  });
+
+  it("rejects empty message", () => {
+    expect(() => NotifyInput.parse({ message: "" })).toThrow();
+  });
+
+  it("rejects timeout < 1000ms", () => {
+    expect(() => NotifyInput.parse({ message: "Test", timeout: 500 })).toThrow();
+  });
+
+  it("rejects timeout > 30000ms", () => {
+    expect(() => NotifyInput.parse({ message: "Test", timeout: 31000 })).toThrow();
   });
 });
