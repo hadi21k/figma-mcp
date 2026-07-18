@@ -238,7 +238,7 @@ function fillsToFigma(fills) {
       return {
         type: "SOLID",
         color: { r: f.color.r, g: f.color.g, b: f.color.b },
-        opacity: f.color.a * nvl(f.opacity, 1),
+        opacity: nvl(f.color.a, 1) * nvl(f.opacity, 1),
       };
     }
     if (
